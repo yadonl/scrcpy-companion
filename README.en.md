@@ -1,37 +1,85 @@
-# ScrcpyCompanion
+# Put your idle Android phone inside your Apple ecosystem
 
-**A floating control bar for scrcpy on Windows — turn your phone into a permanent side display.**
+> No app on the iPhone. No emulator on the Mac. The Android phone in your drawer becomes an Android terminal that is **entirely yours** — no account, no cloud, no data leaving the house.
 
-scrcpy is great, but keeping an Android phone mirrored on a Windows desktop all day is missing a few pieces: the desktop build has no toolbar, the screen stays dark after it sleeps, typing Chinese does not work, and you have to type a pile of adb commands every time. This project wraps all of that behind one shortcut.
+The wall between iOS and Android is not a hardware wall, it is an account wall: to touch Android you are pushed into cloud phones, emulators, second phones and sign-ups, and your data ends up somewhere else.
 
-## What it fixes
+This project takes another route: **keep the Android phone at home, reach over for its screen and its fingers.**
 
-| Pain | Here |
-|---|---|
-| Desktop scrcpy has **no side toolbar** | A topmost floating bar that sticks to the right edge of the mirror window and follows it |
-| Phone screen is black and **will not wake** | `svc power stayon true` + `keyevent 224` at start, `--keep-active` while running |
-| Long sessions **heat up and drain battery** | Brightness is pushed to the panel minimum; on close the phone is restored and put back to sleep |
-| **Chinese input does not work** from the PC keyboard | `--keyboard=uhid` by default — the PC keyboard becomes a real HID keyboard, so the phone IME composes normally |
-| You must **type adb commands** every time | One shortcut: connect → stay awake → dim → wake → mirror → bar; everything is torn down on close |
-| Wireless debugging **ports keep changing** | Endpoint lives in `device.txt` / `config.json`, with clear errors instead of guesses |
+```
+   ┌─────────────┐      Wi-Fi / private network      ┌──────────────┐
+   │  your iPhone │  ←──────── browser ──────────→   │ idle Android  │
+   │   or Mac     │        (no cloud involved)       │  on charger   │
+   └─────────────┘                                   └──────────────┘
+```
 
-## Install
+## What it replaces
 
-Requires Windows 10/11 with PowerShell 5.1, [scrcpy](https://github.com/Genymobile/scrcpy/releases) (bundles adb), and USB/wireless debugging enabled on the phone.
+| You want | Today | Here |
+|---|---|---|
+| Android apps / notifications / SMS from an iPhone | Cloud phone: monthly fee, data on someone else's servers | Real device at home, streamed over your own LAN, **¥0/month** |
+| Android on a Mac | Emulator: heavy, no real sensors, banking apps refuse to run | **Real device, real OS** — camera, GPS, SIM, fingerprint |
+| A quiet spare Android phone | Two phones to carry and charge | Phone stays plugged in a corner, mirror on demand, **screen off when done** |
+| Privacy | Cloud phone = your photos and messages in a datacenter | Video flows over your LAN, **never leaves home**; no account, no vendor backend |
+
+## Three ways to use it
+
+### 1) iPhone / iPad — open Safari, no app to install
+
+Run a browser-based mirror (ws-scrcpy) on a machine that stays on at home, then point Safari at it. Touch control works directly on the page.
+
+- No profile to install, no jailbreak, no third-party app
+- **HTTPS is mandatory**: Safari only exposes WebCodecs in a secure context (a self-signed cert is fine — see [docs/web-access.md](docs/web-access.md))
+- 30–80 ms on the same Wi-Fi; scrolling feels native
+
+### 2) Windows / Mac desktop — persistent scrcpy + a floating control bar (the main part of this repo)
+
+Desktop scrcpy has no toolbar, will not wake a sleeping phone, cannot type CJK, and needs a pile of adb commands every time. This fixes all of it:
+
+One double-click → connect → keep awake → dim to minimum → wake → mirror → a control bar slides out on the right; close the window → the phone goes back to sleep and the brightness is restored.
+
+### 3) Fully offline
+
+Nothing here needs the internet: phone + your PC/server + the same router, and it still works when your ISP is down.
+
+## Privacy and security (in concrete terms)
+
+**Why the data stays home:**
+
+| Stage | This project | Cloud phone / remote-control app |
+|---|---|---|
+| Video | scrcpy streams directly over adb between your two devices | Uploaded to a vendor datacenter, then delivered |
+| Account | None. No signup, no login, no phone number | Phone number + ID + subscription |
+| Installed on the Android phone | A throwaway `scrcpy-server` process | Resident client plus analytics SDKs |
+| Network | Your LAN / your own private network (Tailscale, WireGuard, …) | Vendor relay |
+| Offline | Still works | Dead |
+
+**And the limits, stated plainly (no "absolute security" claims):**
+
+1. **Whoever reaches adb owns that phone.** Keep the debug port inside a trusted network; never expose it to the internet.
+2. Put a token on the web endpoint (ws-scrcpy supports one) and serve it over HTTPS — your LAN is not only you.
+3. A phone that stays plugged in is more reliable, but give it airflow; do not park it at 100% charge in a hot corner.
+4. Your privacy boundary is your network plus your devices. If those fall, no tool saves you.
+
+## Quick start (desktop, Windows)
+
+Requires [scrcpy](https://github.com/Genymobile/scrcpy/releases) (bundles adb) and USB/wireless debugging on the phone.
 
 ```powershell
-git clone https://github.com/yadonl/ScrcpyCompanion.git
-cd ScrcpyCompanion
+git clone https://github.com/yadonl/scrcpy-companion.git
+cd scrcpy-companion
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -ScrcpyDir "D:\tools\scrcpy-win64" -Device 192.168.1.20:5555
 ```
 
-A **Android Mirror** shortcut appears on the desktop. Double-click it.
+An **Android Mirror** shortcut appears on the desktop.
 
 Self-check:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\ScrcpyCompanion\bin\launch.ps1" -CheckOnly
 ```
+
+**iPhone / iPad path**: see [docs/web-access.md](docs/web-access.md).
 
 ## Configuration
 
@@ -42,30 +90,45 @@ powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\ScrcpyCompanion\bin\
 | `scrcpyDir` | app folder | Folder containing scrcpy.exe |
 | `device` | empty | `IP:port`; empty = the USB-attached device |
 | `windowTitle` | `Android (Mirror)` | Mirror window title |
-| `maxFps` | `30` | Lower it to 24 on flaky Wi-Fi |
-| `videoBitRate` | `8M` | Higher values need more Wi-Fi headroom |
+| `maxFps` | `30` | Drop to 24 on flaky Wi-Fi |
+| `videoBitRate` | `8M` | Needs Wi-Fi headroom |
 | `maxSize` | `0` | 0 = native resolution |
-| `keyboard` | `uhid` | **Required for CJK input**; `sdk` bypasses the IME |
-| `keepActive` | `true` | Keeps the panel from timing out |
-| `wakeOnStart` / `dimOnStart` | `true` | Wake and dim the panel on launch |
+| `keyboard` | `uhid` | **Required for CJK input** |
+| `keepActive` | `true` | Prevents the panel from timing out |
+| `wakeOnStart` / `dimOnStart` | `true` | Wake and dim on launch |
 | `showBar` | `true` | Show the floating bar |
 
-## Bar buttons
+## The bar
 
 `Back` `Home` `Recents` `Notifications` `Power` `Vol+` `Vol-` `Screenshot`
 
-Drag it anywhere; it re-docks 15 seconds after you move it. Closing the mirror window closes the bar.
+Docks 4px to the right of the mirror window, re-checks every 0.4s, and re-docks 15 seconds after you drag it away. Buttons drive `adb shell input keyevent`, so they work even when the mirror window is not focused. Closing the mirror closes the bar and puts the phone back to sleep.
 
-scrcpy hotkeys still work: `Alt+P` power, `Alt+B` back, `Alt+H` home, `Alt+S` recents, `Alt+N` notifications, `Alt+O` screen off, `Alt+F` fullscreen, `Alt+↑/↓` volume, `Alt+Q` quit.
+scrcpy hotkeys still apply: `Alt+P` power, `Alt+B` back, `Alt+H` home, `Alt+S` recents, `Alt+N` notifications, `Alt+O` screen off, `Alt+F` fullscreen, `Alt+↑/↓` volume, `Alt+Q` quit.
 
 ## Known limitations
 
-1. **Screen-off and mirroring are mutually exclusive.** Once the panel loses power, frame capture freezes for 3–8 seconds. Nothing in software can fix this, so the project dims instead of turning the screen off.
-2. **Minimum brightness is 1–2 nits** — a hardware floor set by the vendor.
-3. **Wireless ports change** after a reboot or network switch. Pin it with `adb tcpip 5555` or update `device.txt`.
-4. **Windows only** (WPF bar, PowerShell + VBScript launcher).
-5. **CJK input needs uhid mode**; in `sdk` mode keystrokes bypass the IME and non-ASCII characters fail with `Could not inject char`.
-6. Bandwidth-starved Wi-Fi shows up as stutter — lower `maxFps` / `videoBitRate` first.
+1. **Screen-off and mirroring are mutually exclusive** — frame capture freezes 3–8 s after the panel loses power. Hence dimming instead of turning off.
+2. **Minimum brightness is 1–2 nits**, a vendor hardware floor.
+3. **Wireless debug ports change** after reboot or network switch; pin with `adb tcpip 5555` or update `device.txt`.
+4. **CJK input needs `--keyboard=uhid`**; `sdk` mode bypasses the IME and fails on non-ASCII with `Could not inject char`.
+5. The desktop bar is Windows-only (WPF + PowerShell/VBScript); on macOS use scrcpy from the terminal for now.
+6. Low Wi-Fi uplink shows as stutter — lower `maxFps` / `videoBitRate` first.
+
+## Layout
+
+```
+scrcpy-companion/
+├─ install.ps1 / uninstall.ps1
+├─ config.sample.json / device.txt.sample
+├─ bin\
+│  ├─ launch.vbs      hidden-window launcher (no black console)
+│  └─ launch.ps1      connect → stay awake → dim → wake → mirror → cleanup
+├─ bar\
+│  └─ toolbar.ps1     floating control bar docked to the mirror window
+└─ docs\
+   └─ web-access.md   iPhone / iPad browser access
+```
 
 ## License
 
