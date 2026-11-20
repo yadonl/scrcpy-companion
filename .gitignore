@@ -4,6 +4,17 @@ device.txt
 screenshots/
 *.log
 
+# web runtime (run.sh setup generates these: real token, private key, node_modules)
+.env
+web/certs/
+web/ws-scrcpy/
+web/ws-config.yaml
+web/*.pid
+*.pem
+*.key
+*.crt
+node_modules/
+
 # scrcpy binaries (downloaded separately)
 adb.exe
 AdbWinApi.dll

@@ -63,13 +63,26 @@ function safeEq(a, b) {
 }
 
 function tokenFrom(req) {
-  const u = new URL(req.url, 'https://local');
+  let u;
+  try {
+    u = new URL(req.url, 'https://local');
+  } catch {
+    return null;
+  }
   const q = u.searchParams.get('token');
   if (q) return q;
   const raw = req.headers.cookie || '';
   for (const part of raw.split(';')) {
     const [k, ...v] = part.trim().split('=');
-    if (k === COOKIE) return decodeURIComponent(v.join('='));
+    if (k !== COOKIE) continue;
+    // The cookie is attacker-controlled text. decodeURIComponent('%') throws,
+    // and an uncaught throw here used to kill the whole gate: one request with
+    // `Cookie: ar_token=%` was enough to take the mirror down.
+    try {
+      return decodeURIComponent(v.join('='));
+    } catch {
+      return null;
+    }
   }
   return null;
 }
@@ -110,9 +123,7 @@ function readBody(req) {
   });
 }
 
-const server = https.createServer(
-  { cert: fs.readFileSync(CERT), key: fs.readFileSync(KEY) },
-  async (req, res) => {
+async function handle(req, res) {
     const u = new URL(req.url, 'https://local');
 
     if (req.method === 'POST' && u.pathname === '/__auth') {
@@ -148,8 +159,23 @@ const server = https.createServer(
     );
     p.on('error', (e) => { res.writeHead(502); res.end('upstream: ' + e.message); });
     req.pipe(p);
+}
+
+const server = https.createServer(
+  { cert: fs.readFileSync(CERT), key: fs.readFileSync(KEY) },
+  (req, res) => {
+    // A throw in here must not take the gate down: the mirror would just go
+    // black and nothing restarts it.
+    handle(req, res).catch((e) => {
+      console.error('gate: request failed:', e && e.stack || e);
+      try { res.writeHead(500); res.end('gate error\n'); } catch { try { res.destroy(); } catch {} }
+    });
   }
 );
+
+// Last resort: keep serving instead of dying on an unexpected throw.
+process.on('uncaughtException', (e) => console.error('gate: uncaught:', e && e.stack || e));
+process.on('unhandledRejection', (e) => console.error('gate: unhandled rejection:', e && e.stack || e));
 
 // WebSocket (and any Upgrade) passthrough: raw socket piping, token checked once
 server.on('upgrade', (req, socket, head) => {
