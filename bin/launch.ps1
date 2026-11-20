@@ -34,7 +34,25 @@ if (-not (Test-Path $configPath)) {
   Copy-Item (Join-Path $appRoot "config.sample.json") $configPath -Force
   Write-Note "config.json created from sample"
 }
-$cfg = Get-Content $configPath -Raw | ConvertFrom-Json
+# A truncated or empty config.json used to abort the whole script inside a
+# hidden VBS window: the user double-clicked and nothing happened, ever.
+$cfg = $null
+try {
+  $rawCfg = Get-Content $configPath -Raw -ErrorAction Stop
+  if (-not $rawCfg -or -not $rawCfg.Trim()) { throw "config.json is empty" }
+  $cfg = $rawCfg | ConvertFrom-Json -ErrorAction Stop
+} catch {
+  $why = $_.Exception.Message
+  $bak = $configPath + ".bad"
+  Copy-Item $configPath $bak -Force -ErrorAction SilentlyContinue
+  Copy-Item (Join-Path $appRoot "config.sample.json") $configPath -Force
+  try { $cfg = (Get-Content $configPath -Raw) | ConvertFrom-Json } catch { $cfg = $null }
+  Write-Note "config.json unreadable ($why) - backed up to $bak, continuing with defaults"
+  if ($null -eq $cfg) {
+    Show-Message "config.json 读不出来：$why`n`n已备份成 $(Split-Path $bak -Leaf)，请删掉 config.json 后重新双击。"
+    exit 4
+  }
+}
 
 function CfgOr($name, $default) {
   $v = $cfg.$name
@@ -65,6 +83,16 @@ if (-not (Test-Path $scrcpyExe)) {
     exit 2
   }
 }
+# scrcpy 1.x has no --no-audio / --power-off-on-close: it would exit instantly,
+# with stderr swallowed into err.txt and nothing on screen.
+$scVersion = ((& $scrcpyExe --version 2>&1) | Out-String).Trim()
+$scMajor = 0
+if ($scVersion -match 'scrcpy\s+(\d+)\.') { $scMajor = [int]$Matches[1] }
+$scVersionLine = ($scVersion -split "`r?`n")[0]
+$scHelp = ((& $scrcpyExe --help 2>&1) | Out-String)
+$hasPowerOffOnClose = $scHelp -match '--power-off-on-close'
+$hasKeepActive = $scHelp -match '--keep-active'
+
 $adbExe = Join-Path $scrcpyDir "adb.exe"
 if (-not (Test-Path $adbExe)) {
   $cmd = Get-Command adb.exe -ErrorAction SilentlyContinue
@@ -84,8 +112,13 @@ if ($dev -match ":") { & $adbExe connect $dev 2>&1 | Out-Null }
 $state = ""
 try { $state = ((& $adbExe @serial get-state 2>&1) | Out-String).Trim() } catch { $state = "error" }
 
+if ($scMajor -gt 0 -and $scMajor -lt 2) {
+  Show-Message ("scrcpy 是 1.x 版本（{0}）。`n`n本项目用到 --no-audio / --power-off-on-close，只有 2.0 以上才有：`nhttps://github.com/Genymobile/scrcpy/releases`n`n解压到程序目录（或改 config.json 的 scrcpyDir）后重试。" -f $scVersionLine)
+  exit 5
+}
+
 if ($CheckOnly) {
-  Write-Note "scrcpy : $scrcpyExe"
+  Write-Note "scrcpy : $scrcpyExe ($scVersionLine)"
   Write-Note "adb    : $adbExe"
   Write-Note "device : $(if ($dev) { $dev } else { '(auto / usb)' })"
   Write-Note "state  : $state"
@@ -104,7 +137,12 @@ if ($wakeOnStart) {
   & $adbExe @serial shell svc power stayon true 2>&1 | Out-Null
   & $adbExe @serial shell input keyevent 224 2>&1 | Out-Null
 }
+$origBriMode = $null
+$origBri = $null
 if ($dimOnStart) {
+  # remember the real values so closing the session puts the panel back
+  $origBriMode = ((& $adbExe @serial shell settings get system screen_brightness_mode 2>&1) | Out-String).Trim()
+  $origBri     = ((& $adbExe @serial shell settings get system screen_brightness 2>&1) | Out-String).Trim()
   & $adbExe @serial shell settings put system screen_brightness_mode 0 2>&1 | Out-Null
   & $adbExe @serial shell settings put system screen_brightness 0 2>&1 | Out-Null
 }
@@ -128,10 +166,12 @@ $scArgs = @(
   "--max-size=$maxSize",
   "--max-fps=$maxFps",
   "--video-bit-rate=$bitRate",
-  "--keyboard=$keyboard",
-  "--power-off-on-close"
+  "--keyboard=$keyboard"
 )
-if ($keepActive) { $scArgs += "--keep-active" }
+if ($hasPowerOffOnClose) { $scArgs += "--power-off-on-close" }
+if ($keepActive) {
+  if ($hasKeepActive) { $scArgs += "--keep-active" } else { $scArgs += "--stay-awake" }
+}
 if ($dev) { $scArgs = @("-s", $dev) + $scArgs }
 
 $logPath = Join-Path $appRoot $logFile
@@ -139,11 +179,12 @@ $errPath = [System.IO.Path]::ChangeExtension($logPath, ".err.txt")
 $argStr  = ($scArgs | ForEach-Object { if ($_ -match '[\s"]') { '"' + $_ + '"' } else { $_ } }) -join " "
 Write-Note "starting scrcpy (log: $logPath)"
 $proc = $null
+$earlyExit = $false
 try {
   # -NoNewWindow keeps scrcpy attached to our hidden console (no extra black box)
   $proc = Start-Process -FilePath $scrcpyExe -ArgumentList $argStr -NoNewWindow -PassThru `
             -RedirectStandardOutput $logPath -RedirectStandardError $errPath
-  $proc.WaitForExit()
+  if (-not $proc.WaitForExit(5000)) { $proc.WaitForExit() } else { $earlyExit = $true }
 } finally {
   if (Test-Path $errPath) {
     if ((Get-Item $errPath).Length -gt 0) { Get-Content $errPath -Encoding Default | Out-File -Append -Encoding utf8 $logPath }
@@ -152,9 +193,15 @@ try {
   if ($barProc -and -not $barProc.HasExited) { Stop-Process -Id $barProc.Id -Force -ErrorAction SilentlyContinue }
   if ($wakeOnStart) { & $adbExe @serial shell svc power stayon false 2>&1 | Out-Null }
   if ($dimOnStart) {
-    & $adbExe @serial shell settings put system screen_brightness_mode 0 2>&1 | Out-Null
-    & $adbExe @serial shell settings put system screen_brightness 1 2>&1 | Out-Null
-    & $adbExe @serial shell input keyevent 223 2>&1 | Out-Null
+    # restore the values we read on start instead of hardcoding 1
+    if ($origBri -match '^\d+$')     { & $adbExe @serial shell settings put system screen_brightness $origBri 2>&1 | Out-Null }
+    if ($origBriMode -match '^\d+$') { & $adbExe @serial shell settings put system screen_brightness_mode $origBriMode 2>&1 | Out-Null }
+    if (-not $hasPowerOffOnClose) { & $adbExe @serial shell input keyevent 223 2>&1 | Out-Null }
+  }
+  if ($earlyExit -and $null -ne $proc) {
+    $tail = ""
+    if (Test-Path $logPath) { $tail = ((Get-Content $logPath -Tail 6 -Encoding Default -ErrorAction SilentlyContinue) -join "`r`n") }
+    Show-Message ("scrcpy 启动后 5 秒内就退出了（exit {0}）。`n`n{1}`n`n完整日志：{2}" -f $proc.ExitCode, $tail, $logPath)
   }
   Write-Note "session closed"
 }

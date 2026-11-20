@@ -41,6 +41,18 @@ if (-not $ScrcpyDir -or -not (Test-Path (Join-Path $ScrcpyDir "scrcpy.exe"))) {
 $ScrcpyDir = (Resolve-Path $ScrcpyDir).Path
 Ok "scrcpy: $ScrcpyDir"
 
+# ---- version gate: 1.x lacks --no-audio / --power-off-on-close and would die instantly ----
+$scVersion = ((& (Join-Path $ScrcpyDir "scrcpy.exe") --version 2>&1) | Out-String).Trim()
+if ($scVersion -match 'scrcpy\s+(\d+)\.') {
+  $scMajor = [int]$Matches[1]
+  if ($scMajor -lt 2) {
+    Fail ("scrcpy {0} 太旧：本项目要用 --no-audio / --power-off-on-close，需要 2.0 以上。`n    下载新版：https://github.com/Genymobile/scrcpy/releases" -f $scVersion.Split("`n")[0])
+  }
+  Ok ("version: " + $scVersion.Split("`n")[0])
+} else {
+  Info "无法识别 scrcpy 版本（$scVersion），请确认解压的是官方 release"
+}
+
 # ---- copy program files ----
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "bin") | Out-Null

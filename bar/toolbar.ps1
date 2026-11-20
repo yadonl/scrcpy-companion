@@ -21,8 +21,21 @@ $logPath = Join-Path $appRoot "bar.log"
 function Log($m) { ("{0} {1}" -f (Get-Date -Format "HH:mm:ss"), $m) | Out-File -Append -Encoding utf8 $logPath }
 
 # ---------------- single instance ----------------
+# WaitOne throws AbandonedMutexException when the previous instance died while
+# still holding the mutex - which is exactly what happens every time launch.ps1
+# closes the bar with Stop-Process. In that case we DO own the mutex now, so
+# bailing out here would mean "no bar, ever, and nothing in the log".
 $mutex = New-Object System.Threading.Mutex($false, "Global\scrcpy_companion_bar")
-if (-not $mutex.WaitOne(0)) { exit }
+$owned = $false
+try {
+  $owned = $mutex.WaitOne(0)
+} catch [System.Threading.AbandonedMutexException] {
+  $owned = $true
+  Log "previous bar was killed while holding the mutex, taking over"
+} catch {
+  Log ("mutex wait failed: " + $_.Exception.Message)
+}
+if (-not $owned) { exit }
 
 # ---------------- config ----------------
 $cfgPath = if ($ConfigPath) { $ConfigPath } else { Join-Path $appRoot "config.json" }
@@ -134,9 +147,32 @@ try {
   $win.FindName("bShot").Add_Click({
     New-Item -ItemType Directory -Force -Path $shotDir | Out-Null
     $f = Join-Path $shotDir ("shot_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".png")
-    & cmd.exe /c "`"$adb`" $(if ($dev) { "-s $dev" }) exec-out screencap -p > `"$f`""
-    $lbl.Text = "已存 screenshots"
-    if (Test-Path $f) { Start-Process $f }
+    # PNG must be written byte-exact: a cmd redirect re-encodes it and breaks it,
+    # and `cmd /c "..."` strips the outer quotes when a path has spaces.
+    $shotOk = $false
+    try {
+      $psi = New-Object System.Diagnostics.ProcessStartInfo
+      $psi.FileName = $adb
+      $psi.Arguments = ((@($serial) + @("exec-out", "screencap", "-p")) -join " ")
+      $psi.UseShellExecute = $false
+      $psi.CreateNoWindow = $true
+      $psi.RedirectStandardOutput = $true
+      $proc = [System.Diagnostics.Process]::Start($psi)
+      $fs = [System.IO.File]::Create($f)
+      try { $proc.StandardOutput.BaseStream.CopyTo($fs) } finally { $fs.Close() }
+      $proc.WaitForExit(15000) | Out-Null
+      if ($proc.ExitCode -eq 0 -and (Get-Item $f).Length -gt 2000) { $shotOk = $true }
+      else { $lbl.Text = "截图失败 exit=$($proc.ExitCode)" }
+    } catch {
+      $lbl.Text = "截图失败"
+      Log ("screenshot: " + $_.Exception.Message)
+    }
+    if ($shotOk) {
+      $lbl.Text = "已存 screenshots"
+      Start-Process $f
+    } elseif (Test-Path $f) {
+      Remove-Item $f -Force -ErrorAction SilentlyContinue
+    }
   })
 
   # ---- stick to the right edge of the mirror window ----
@@ -181,7 +217,7 @@ try {
   $win.Add_Loaded({ $dock.Invoke() })
   Log "bar shown (device=$(if ($dev) { $dev } else { 'auto' }))"
   $win.ShowDialog() | Out-Null
-  $mutex.ReleaseMutex()
+  try { $mutex.ReleaseMutex() } catch {}
 } catch {
   Log ("ERROR: " + $_.Exception.Message)
   Log ($_.ScriptStackTrace)
