@@ -1,0 +1,24 @@
+# local config & device endpoint (never commit)
+config.json
+device.txt
+screenshots/
+*.log
+
+# scrcpy binaries (downloaded separately)
+adb.exe
+AdbWinApi.dll
+AdbWinUsbApi.dll
+scrcpy.exe
+scrcpy-server
+SDL3.dll
+avcodec-*.dll
+avformat-*.dll
+avutil-*.dll
+swresample-*.dll
+libusb-1.0.dll
+
+# editor / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

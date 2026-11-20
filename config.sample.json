@@ -1,0 +1,14 @@
+{
+  "scrcpyDir": "",
+  "device": "",
+  "windowTitle": "Android (Mirror)",
+  "maxSize": 0,
+  "maxFps": 30,
+  "videoBitRate": "8M",
+  "keyboard": "uhid",
+  "keepActive": true,
+  "wakeOnStart": true,
+  "dimOnStart": true,
+  "showBar": true,
+  "logFile": "scrcpy-log.txt"
+}
