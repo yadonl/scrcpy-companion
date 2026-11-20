@@ -33,8 +33,8 @@ cd web && ./run.sh setup && ./run.sh start && ./run.sh url
 `setup` clones ws-scrcpy, builds it, creates a self-signed cert and an access token; `start` brings up the mirror plus an **HTTPS token gate**; `url` prints the address for the iPhone.
 
 - No profile, no jailbreak, no third-party app
-- **HTTPS + token gate included**: Safari only exposes WebCodecs in a secure context (plain HTTP gives you a device list and a black canvas), and the endpoint must not be open to the whole LAN
-- 30–80 ms on the same Wi-Fi; scrolling feels native
+- **HTTPS + token gate included**: Safari only exposes WebCodecs in a secure context (plain HTTP gives you a device list and a black canvas); the gate owns `:9443` and ws-scrcpy itself binds `127.0.0.1`, so the LAN has no second way in
+- Latency is whatever your Wi-Fi and the phone encoder do — nothing is relayed
 - Details: [web/README.md](web/README.md), [docs/web-access.md](docs/web-access.md)
 
 ### 2) Windows / Mac desktop — persistent scrcpy + a floating control bar (the main part of this repo)
@@ -43,9 +43,11 @@ Desktop scrcpy has no toolbar, will not wake a sleeping phone, cannot type CJK, 
 
 One double-click → connect → keep awake → dim to minimum → wake → mirror → a control bar slides out on the right; close the window → the phone goes back to sleep and the brightness is restored.
 
-### 3) Fully offline
+### 3) Offline once running
 
-Nothing here needs the internet: phone + your PC/server + the same router, and it still works when your ISP is down.
+After it is up nothing needs the internet: phone + your PC/server + the same router, and it still works when your ISP is down.
+
+(One exception: the first `web/run.sh setup` needs the network — that is when ws-scrcpy and its dependencies are fetched.)
 
 ## Privacy and security (in concrete terms)
 
@@ -62,7 +64,7 @@ Nothing here needs the internet: phone + your PC/server + the same router, and i
 **And the limits, stated plainly (no "absolute security" claims):**
 
 1. **Whoever reaches adb owns that phone.** Keep the debug port inside a trusted network; never expose it to the internet.
-2. Put a token on the web endpoint (ws-scrcpy supports one) and serve it over HTTPS — your LAN is not only you.
+2. Put a token on the web endpoint and serve it over HTTPS — **ws-scrcpy has no auth of its own**; `web/gate.js` in this repo is that layer. Your LAN is not only you.
 3. A phone that stays plugged in is more reliable, but give it airflow; do not park it at 100% charge in a hot corner.
 4. Your privacy boundary is your network plus your devices. If those fall, no tool saves you.
 

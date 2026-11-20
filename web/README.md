@@ -17,7 +17,7 @@ web/run.sh url      # 打印 iPhone 该打开的地址和令牌
 1. **Safari 只在安全上下文里开放 WebCodecs**。用 `http://` 打开，你会看到设备列表正常、画面一片黑——这是最多人踩的坑。
 2. **网页端一旦暴露在局域网，任何能访问的人都能操作你的手机**。所以 `gate.js` 在最前面挡一道：没有令牌连登录页都过不去，WebSocket 升级同样校验。
 
-`gate.js` 只用 Node 标准库，零依赖，40 行核心逻辑：HTTPS 终结 → 校验令牌（`?token=` / Cookie / 表单登录）→ 反代到 ws-scrcpy，`Upgrade` 请求用裸 socket 透传。
+`gate.js` 只用 Node 标准库，零依赖，约 170 行：HTTPS 终结 → 校验令牌（`?token=` / Cookie / 表单登录）→ 反代到 ws-scrcpy，`Upgrade` 请求用裸 socket 透传。
 
 ## 安装
 
@@ -45,7 +45,7 @@ cd web
 | 产物 | 说明 |
 |---|---|
 | `web/ws-scrcpy/` | 上游 [NetrisTV/ws-scrcpy](https://github.com/NetrisTV/ws-scrcpy)，自动 clone |
-| `web/certs/` | 自签证书，SAN 自动带上你机器的局域网 IP |
+| `web/certs/` | 自签证书，SAN 自动带上你机器的局域网 IP；397 天有效，快到期或 IP 变了 `start` 会自动重签 |
 | `web/.env` | 端口与 `GATE_TOKEN`（随机 24 位，权限 600） |
 | `web/logs/` | `ws.log` / `gate.log` |
 
@@ -83,4 +83,5 @@ adb devices                  # 状态要是 device
 | 打不开 9443 | `./run.sh status`，再看 `logs/gate.log` |
 | 昨天能用今天不行 | 无线调试端口变了，重新 `adb connect`（或固定 5555） |
 | WebSocket 一直重连 | 反代/防火墙没放行 Upgrade 头；本项目自带的 gate 已处理，别再套一层 Nginx |
+| iPhone 报证书错误 / 勾了信任还是报 | 证书是旧参数签的（3650 天、没写 serverAuth）。删掉 `web/certs/` 再 `./run.sh start`，会按新参数重签 |
 | 手机烫 | 网页端是持续编码，正常。插电 + 通风 |
