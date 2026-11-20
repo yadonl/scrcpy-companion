@@ -29,6 +29,8 @@ web/run.sh url      # 打印 iPhone 该打开的地址和令牌
   - Debian/Ubuntu/飞牛：`apt-get install -y build-essential python3`
   - Alpine：`apk add build-base python3`
   - macOS：`xcode-select --install`
+
+  > 缺工具链时，**换成 Node 20 也一样编不过**（实测报错都是 `gyp ERR! not ok`），真因是 C++ 编译器，不是 Node 版本。
 - 安卓机和这台机器在同一个局域网，手机上打开「无线调试」
 
 ```bash
