@@ -71,6 +71,8 @@ using System;
 using System.Runtime.InteropServices;
 public class CompanionWin32 {
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
   [StructLayout(LayoutKind.Sequential)]
   public struct RECT { public int Left, Top, Right, Bottom; }
 }
@@ -82,7 +84,7 @@ $xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="scrcpy-bar" WindowStyle="None" AllowsTransparency="True"
-        Background="Transparent" Topmost="True" ShowInTaskbar="False"
+        Background="Transparent" Topmost="False" ShowInTaskbar="False"
         SizeToContent="Height" Width="92" ResizeMode="NoResize">
   <Border CornerRadius="14" Background="#F01A1D24" Padding="6">
     <StackPanel>
@@ -180,8 +182,16 @@ try {
   $script:frozenUntil = [DateTime]::MinValue
   $script:missed = 0
   $script:everSeen = $false
+  $script:barHwnd = [IntPtr]::Zero
+  $script:parked = $false
+  $script:errAt = [DateTime]::MinValue
 
-  $dock = {
+  # Off-screen parking spot. Do NOT use $win.Hide() here: hiding a window that
+  # is running under ShowDialog() tears the whole process down (verified - the
+  # powershell process disappears and not even the "bar shown" path logs).
+  $PARK = -20000
+
+  $dockBody = {
     if ((Get-Date) -lt $script:frozenUntil) { return }
     $p = Get-Process scrcpy -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
     if (-not $p) {
@@ -192,8 +202,21 @@ try {
     }
     $script:everSeen = $true
     $script:missed = 0
+    $hwndMirror = [IntPtr]$p.MainWindowHandle
+
+    # Both appear or neither appears: mirror minimised -> park the bar.
+    if ([CompanionWin32]::IsIconic($hwndMirror)) {
+      if (-not $script:parked) {
+        $win.Left = $PARK; $win.Top = $PARK
+        $script:parked = $true
+        Log "mirror minimised -> bar parked"
+      }
+      return
+    }
+    if ($script:parked) { $script:parked = $false; Log "mirror back -> bar shown" }
+
     $r = New-Object CompanionWin32+RECT
-    if (-not [CompanionWin32]::GetWindowRect($p.MainWindowHandle, [ref]$r)) { return }
+    if (-not [CompanionWin32]::GetWindowRect($hwndMirror, [ref]$r)) { return }
     $wWin = $r.Right - $r.Left
     $hWin = $r.Bottom - $r.Top
     if ($wWin -lt 100 -or $hWin -lt 100) { return }
@@ -207,6 +230,25 @@ try {
     if (($y + $h) -gt $wa.Bottom) { $y = $wa.Bottom - $h }
     $win.Left = $x
     $win.Top  = $y
+
+    # One z-order slot above the mirror: anything that covers the mirror covers
+    # the bar with it, so the bar never floats on a window that hides the phone.
+    if ($script:barHwnd -ne [IntPtr]::Zero) {
+      [void][CompanionWin32]::SetWindowPos($script:barHwnd, $hwndMirror, 0, 0, 0, 0, 0x13)
+    }
+  }
+
+  # A throwing tick must not take the process down with it.
+  $dock = {
+    try {
+      & $dockBody
+      $script:errAt = [DateTime]::MinValue
+    } catch {
+      if ($script:errAt -eq [DateTime]::MinValue -or ((Get-Date) - $script:errAt).TotalSeconds -gt 30) {
+        $script:errAt = Get-Date
+        Log ("dock ERROR: " + $_.Exception.Message)
+      }
+    }
   }
 
   $timer = New-Object System.Windows.Threading.DispatcherTimer
@@ -214,7 +256,11 @@ try {
   $timer.Add_Tick($dock)
   $timer.Start()
 
-  $win.Add_Loaded({ $dock.Invoke() })
+  $win.Add_Loaded({
+    try { $script:barHwnd = (New-Object System.Windows.Interop.WindowInteropHelper($win)).Handle }
+    catch { Log ("hwnd: " + $_.Exception.Message) }
+    $dock.Invoke()
+  })
   Log "bar shown (device=$(if ($dev) { $dev } else { 'auto' }))"
   $win.ShowDialog() | Out-Null
   try { $mutex.ReleaseMutex() } catch {}

@@ -1,4 +1,4 @@
-# Put your idle Android phone inside your Apple ecosystem
+﻿# Put your idle Android phone inside your Apple ecosystem
 
 > No app on the iPhone. No emulator on the Mac. The Android phone in your drawer becomes an Android terminal that is **entirely yours** — no account, no cloud, no data leaving the house.
 
@@ -133,6 +133,7 @@ scrcpy-companion/
 │  └─ launch.ps1      connect → stay awake → dim → wake → mirror → cleanup
 ├─ bar\
 │  └─ toolbar.ps1     floating control bar docked to the mirror window
+│                     (behaves as one unit with the mirror: both visible or neither)
 ├─ docs\
 │  └─ web-access.md   iOS access: how it works, what breaks
 └─ web\
