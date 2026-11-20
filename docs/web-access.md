@@ -15,12 +15,20 @@
 
 ## 装
 
-按 ws-scrcpy 官方 README 安装（`npm install` → `npm run build` → 启动，默认端口 8000）。本项目不复制它的安装命令，避免版本漂移后误导你。
+不用照着上游 README 一步步来，本仓库带了封装：
 
-要点只有两条：
+```bash
+cd web && ./run.sh setup && ./run.sh start && ./run.sh url
+```
+
+它负责：拉 ws-scrcpy、编译、签自签证书、生成令牌、起服务（详见 [web/README.md](../web/README.md)）。
+
+前置里唯一容易被忽略的是**构建工具链**——ws-scrcpy 依赖 `node-pty`（原生模块），没有预编译包就要现场编译：Debian/Ubuntu/飞牛 `apt-get install -y build-essential python3`，macOS `xcode-select --install`。Node 用 18/20/22 LTS，别用过新的。
+
+自己动手装也可以，要点就两条：
 
 1. **必须能连到安卓机的 adb**：先 `adb connect 手机IP:端口`，网页端才会出现设备。
-2. **必须加访问令牌**：网页端暴露在局域网里，任何能访问的人都能控制你的手机。ws-scrcpy 支持 token 校验，务必打开。
+2. **必须加访问令牌**：网页端暴露在局域网里，任何能访问的人都能控制你的手机。本仓库的 `web/gate.js` 就是在前面挡这一道的（不依赖 ws-scrcpy 自己的鉴权）。
 
 ## HTTPS 是硬要求（不然 Safari 黑屏）
 

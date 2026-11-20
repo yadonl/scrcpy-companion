@@ -24,13 +24,18 @@ This project takes another route: **keep the Android phone at home, reach over f
 
 ## Three ways to use it
 
-### 1) iPhone / iPad — open Safari, no app to install
+### 1) iPhone / iPad — one command, then open Safari (no app to install)
 
-Run a browser-based mirror (ws-scrcpy) on a machine that stays on at home, then point Safari at it. Touch control works directly on the page.
+```bash
+cd web && ./run.sh setup && ./run.sh start && ./run.sh url
+```
 
-- No profile to install, no jailbreak, no third-party app
-- **HTTPS is mandatory**: Safari only exposes WebCodecs in a secure context (a self-signed cert is fine — see [docs/web-access.md](docs/web-access.md))
+`setup` clones ws-scrcpy, builds it, creates a self-signed cert and an access token; `start` brings up the mirror plus an **HTTPS token gate**; `url` prints the address for the iPhone.
+
+- No profile, no jailbreak, no third-party app
+- **HTTPS + token gate included**: Safari only exposes WebCodecs in a secure context (plain HTTP gives you a device list and a black canvas), and the endpoint must not be open to the whole LAN
 - 30–80 ms on the same Wi-Fi; scrolling feels native
+- Details: [web/README.md](web/README.md), [docs/web-access.md](docs/web-access.md)
 
 ### 2) Windows / Mac desktop — persistent scrcpy + a floating control bar (the main part of this repo)
 
@@ -79,7 +84,7 @@ Self-check:
 powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\ScrcpyCompanion\bin\launch.ps1" -CheckOnly
 ```
 
-**iPhone / iPad path**: see [docs/web-access.md](docs/web-access.md).
+**iPhone / iPad path**: `cd web && ./run.sh setup && ./run.sh start`, then open the `https://<lan-ip>:9443/` it prints. See [web/README.md](web/README.md).
 
 ## Configuration
 
@@ -126,8 +131,12 @@ scrcpy-companion/
 │  └─ launch.ps1      connect → stay awake → dim → wake → mirror → cleanup
 ├─ bar\
 │  └─ toolbar.ps1     floating control bar docked to the mirror window
-└─ docs\
-   └─ web-access.md   iPhone / iPad browser access
+├─ docs\
+│  └─ web-access.md   iOS access: how it works, what breaks
+└─ web\
+   ├─ run.sh          setup / start / stop / status
+   ├─ gate.js         HTTPS + token gate (zero deps, WS passthrough)
+   └─ README.md       iOS web access guide
 ```
 
 ## License

@@ -24,13 +24,18 @@ iOS 和安卓之间那道墙，本质上不是硬件墙，是"账号墙"：想�
 
 ## 三条使用路径
 
-### 1) iPhone / iPad：Safari 打开就能操作（不装 App）
+### 1) iPhone / iPad：一条命令起网页端，Safari 打开就能操作（不装 App）
 
-在自己家里的服务器/常开的电脑上跑一个网页版投屏（[ws-scrcpy](https://github.com/NetrisTV/ws-scrcpy)），iPhone 用 Safari 打开地址即可触摸操作安卓机。
+```bash
+cd web && ./run.sh setup && ./run.sh start && ./run.sh url
+```
+
+`setup` 自动拉 [ws-scrcpy](https://github.com/NetrisTV/ws-scrcpy)、构建、签自签证书、生成访问令牌；`start` 起两个进程（网页端 + **HTTPS 门**），`url` 打印 iPhone 该打开的地址。
 
 - 不用装描述文件、不用越狱、不用第三方 App
-- **必须 HTTPS**：Safari 只有在安全上下文里才开 WebCodecs 硬解（自签证书即可，见 [docs/web-access.md](docs/web-access.md)）
+- **自带 HTTPS + 令牌门**：Safari 只在安全上下文里开 WebCodecs（HTTP 打开会"有设备列表、画面全黑"），而门户暴露在局域网里必须挡一道
 - 同一 Wi-Fi 下延迟 30~80ms，滑动跟手
+- 细节与踩坑：[web/README.md](web/README.md)、[docs/web-access.md](docs/web-access.md)
 
 ### 2) Windows / Mac 桌面：scrcpy 常驻 + 悬浮控制条（本仓库主体）
 
@@ -81,7 +86,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 `
 powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\ScrcpyCompanion\bin\launch.ps1" -CheckOnly
 ```
 
-**iPhone / iPad 那条路**：见 [docs/web-access.md](docs/web-access.md)（自建网页端 + HTTPS + 令牌，附踩坑清单）。
+**iPhone / iPad 那条路**：`cd web && ./run.sh setup && ./run.sh start`，然后打开它打印的 `https://<内网IP>:9443/`。说明见 [web/README.md](web/README.md)。
 
 ## 配置
 
@@ -131,8 +136,12 @@ scrcpy-companion/
 │  └─ launch.ps1      连设备 → 防睡 → 压亮度 → 唤醒 → 投屏 → 收尾
 ├─ bar\
 │  └─ toolbar.ps1     悬浮控制条（贴住投屏窗口右沿）
-└─ docs\
-   └─ web-access.md   iPhone / iPad 浏览器端接入
+├─ docs\
+│  └─ web-access.md   iPhone / iPad 接入的原理与排障
+└─ web\
+   ├─ run.sh          一条命令：装 / 起 / 停 / 看状态
+   ├─ gate.js         HTTPS + 令牌门（零依赖，WebSocket 透传）
+   └─ README.md       iOS 网页端说明
 ```
 
 ## License
