@@ -302,6 +302,7 @@ export class StreamClientScrcpy
     };
 
     public onVideoFrame = (data: Uint8Array, pts: bigint, isConfig: boolean, isKeyframe: boolean): void => {
+        this.lastFrameAt = Date.now();
         if (!this.player) return;
         const STATE = BasePlayer.STATE;
         if (this.player.getState() === STATE['PAUSED']) {
@@ -339,6 +340,8 @@ export class StreamClientScrcpy
         );
         // 会话回来了 = 自愈成功，把"重连中"的提示和计时器清掉
         this.clearResume();
+        this.lastFrameAt = Date.now();
+        this.stallProbeAt = 0;
         // 真收到会话元数据，才算这条连接是活的；从此再断就是前台真故障
         this.pageHiddenAt = 0;
 
@@ -421,7 +424,7 @@ export class StreamClientScrcpy
      */
     private static readonly RESUME_PROACTIVE_AFTER_MS = 5000;
     /** 手机可能正从睡眠里醒来、adb 还没回来：一轮接不上就再来一轮 */
-    private static readonly RESUME_MAX_ATTEMPTS = 3;
+    private static readonly RESUME_MAX_ATTEMPTS = 6;
     private resumeAttempts = 0;
     /** 用户是否已经有过手势（iOS 靠它决定能不能唤醒 AudioContext） */
     private userInteracted = false;
@@ -492,14 +495,16 @@ export class StreamClientScrcpy
     }
 
     public onDisconnected = (ev?: CloseEvent): void => {
-        // 后台掐断：这是 iOS 挂起页面必然发生的事，不是投屏失败。不关投屏窗口，
-        // 等页面回到前台自己接回来（onVisibilityChange → resumeIfDead）。
-        if (!this.isStopping && !this.isRefreshing && this.closedByBackground()) {
+        // 非用户主动关流 → 一律先自己接，不再区分"是不是后台掐的"。
+        // 以前的判断只认后台场景，于是「看着看着画面没了」会走到下面的失败分支：
+        // 弹个错、关掉投屏，用户得手点一次连接。而 WiFi/LTE 换路径、Tailscale
+        // 换 DERP 中继、手机无线调试抖一下，表现都是同一张不动的画。
+        if (!this.isStopping && !this.isRefreshing) {
             this.suspended = true;
             if (document.visibilityState === 'hidden') {
                 this.showResumeNotice();
             } else {
-                this.resume();
+                this.resume('socket closed while visible');
             }
             return;
         }
@@ -531,11 +536,52 @@ export class StreamClientScrcpy
         }
     };
 
-    /** 关闭事件发生在后台期间（或回来后的几秒内）→ 算"后台掐断"，不算失败 */
-    private closedByBackground(): boolean {
-        if (document.visibilityState === 'hidden') return true;
-        if (this.suspended) return true;
-        return this.pageHiddenAt > 0 && Date.now() - this.pageHiddenAt < 5 * 60 * 1000;
+    /** 帧停了但 socket 假装还活着：iOS 上这是最常见的死法 */
+    private lastFrameAt = 0;
+    private stallProbeAt = 0;
+    private stallTimer: number | undefined = undefined;
+    /** 画面静止时 scrcpy 本来就不出帧，所以先要关键帧探活，再决定要不要重连 */
+    private static readonly STALL_AFTER_MS = 20000;
+    private static readonly STALL_GRACE_MS = 6000;
+
+    private startStallWatch(): void {
+        if (this.stallTimer !== undefined) return;
+        this.lastFrameAt = Date.now();
+        this.stallProbeAt = 0;
+        this.stallTimer = window.setInterval(() => this.stallTick(), 2000);
+    }
+
+    private stopStallWatch(): void {
+        if (this.stallTimer !== undefined) {
+            window.clearInterval(this.stallTimer);
+            this.stallTimer = undefined;
+        }
+        this.stallProbeAt = 0;
+    }
+
+    private stallTick(): void {
+        if (this.isStopping || this.isRefreshing || this.suspended) return;
+        if (document.visibilityState === 'hidden') return;
+        const now = Date.now();
+        const quiet = now - this.lastFrameAt;
+        if (quiet < StreamClientScrcpy.STALL_AFTER_MS) {
+            this.stallProbeAt = 0;
+            return;
+        }
+        if (this.stallProbeAt === 0) {
+            // 不能一没帧就重连：手机屏幕不动的时候 scrcpy 就是不编码，那是正常的。
+            // 要一帧关键帧（会强制重新抓屏），静态画面会立刻回帧，死连接不会。
+            console.warn(TAG, `no video frame for ${Math.round(quiet / 1000)}s — asking for a keyframe`);
+            this.stallProbeAt = now;
+            this.demuxer?.sendControl(new CommandControlMessage(ControlMessage.TYPE_RESET_VIDEO));
+            return;
+        }
+        if (now - this.stallProbeAt < StreamClientScrcpy.STALL_GRACE_MS) return;
+        console.warn(TAG, 'still no frame after a keyframe request — the socket is dead on the wire, reconnecting');
+        this.stallProbeAt = 0;
+        this.suspended = true;
+        this.showResumeNotice();
+        this.resume('video stalled');
     }
 
     private readonly onVisibilityChange = (): void => {
@@ -571,10 +617,10 @@ export class StreamClientScrcpy
         this.resume();
     }
 
-    private resume(): void {
+    private resume(why = 'dead socket'): void {
         if (this.resumeTimer !== undefined) return;
         this.resumeAttempts++;
-        console.log(TAG, `page is back in the foreground with a dead socket — reconnecting (attempt ${this.resumeAttempts})`);
+        console.log(TAG, `reconnecting (${why}, attempt ${this.resumeAttempts}/${StreamClientScrcpy.RESUME_MAX_ATTEMPTS})`);
         this.suspended = true;
         this.showResumeNotice();
         this.refreshStream();
@@ -787,6 +833,7 @@ export class StreamClientScrcpy
 
         // Always enable keyboard capture
         this.setHandleKeyboardEvents(true);
+        this.startStallWatch();
 
         console.log(TAG, player.getName(), udid);
     }
@@ -794,6 +841,7 @@ export class StreamClientScrcpy
     public stopStream(): void {
         document.removeEventListener('visibilitychange', this.onVisibilityChange);
         window.removeEventListener('online', this.onNetworkBack);
+        this.stopStallWatch();
         this.clearResume();
         // 用户主动关掉的流不再自动重开
         forgetStreamForResume();

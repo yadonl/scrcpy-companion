@@ -15,6 +15,7 @@
 | --- | --- | --- |
 | 画面糊得像 480p | 服务端 `clampInt(bitrate, max)` **只封顶不抬高**，客户端传 20M 也被压回 12M | `src/server/clientProfile.ts`（新增，按 UA/入口强制拉到机型上限） |
 | 锁屏一会儿 adb 就掉，回来一片黑 | 手机睡眠 → 无线调试断开，服务端不重建连接 | `src/server/ScrcpyConnection.ts` 的 `reviveIfMissing()`：`devices()` → `connect()` → `mdnsServices()` 三连 |
+| 看着看着画面没了，必须手点一次连接 | 断线自愈只认「后台掐断」，前台断的走失败分支直接关窗；而 iOS 会把死 TCP 谎报成 `readyState=OPEN`，连 close 都不给 | `StreamClientScrcpy.ts`：非主动关流一律进 `resume()`（6 轮 ×10s）+ 20 秒无帧先要一帧关键帧、6 秒还不回就判定死连接 |
 | 切后台再回来，画面永远转圈 | iOS 会把挂后台的 WebSocket 掐死，但 `readyState` 仍报 `OPEN`；服务端 socket 一 close 就杀 scrcpy-server | `src/app/ScrcpyDemuxer.ts`（`isOpen()` 探活）+ `src/app/googDevice/client/streamDeepLink.ts`（`x-resume-stream`，5 分钟 TTL）+ `StreamClientScrcpy.ts`（最多 3 轮、每轮 10 秒的静默自愈，不弹框） |
 | 没声音；点了屏幕才响一下 | `resumeAudio` 是 `{once:true}` 的 click 监听，用户手势发生在 `AudioPlayer` 创建之前 → 音频上下文永远没解锁 | `StreamClientScrcpy.ts`：常驻捕获阶段 `pointerdown/touchend/keydown` 解锁 + 500ms 轮询兜底，超时给一个「🔇 点这里开声音」按钮 |
 | 声音比画面慢 2 秒 | `PcmWorklet` 的队列**没有上限**，开流瞬间 1~2 秒音频一次性灌进来，之后生产/消费同速，积压永远消化不掉 | `src/app/audio/PcmWorklet.ts`：`MAX_MS=200 / TARGET_MS=90`，超了就**从队头丢**（延迟优先），并每秒回报 `queuedMs` 便于排查 |
