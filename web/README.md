@@ -65,6 +65,27 @@ adb devices                  # 状态要是 device
 1. **信任自签证书**：设置 → 通用 → 关于本机 → 证书信任设置 → 打开对应开关。不点的话 Safari 要么报证书错误，要么画面黑。
 2. **点一下页面再出声**：iOS 不允许自动播放，音频要你先交互。
 
+## 想更好用：投屏增强补丁（可选）
+
+原生 ws-scrcpy 的参数是按「桌面浏览器调试」定的，当 iPhone 日常入口会缺几样东西。`web/overlay/` 里是我在真机上逐个改好的版本，覆盖到源码重新构建即可：
+
+```bash
+./web/overlay/apply.sh ./web/ws-scrcpy   # 覆盖补丁文件（会自动核对基线版本）
+cd web/ws-scrcpy && npm run build        # 重新构建
+```
+
+它补的是这七件事（细节和根因见 `web/overlay/README.md`）：
+
+- **码率拉满**：服务端原来只会往下压客户端传的码率，现在按机型/入口强制拉满（实测 12M → 20M）
+- **掉线自愈**：手机睡一会儿无线调试就断，开流前自动 `devices → connect → mdns` 三连，不用你再回去点
+- **切后台恢复**：iOS 挂后台会悄悄掐死 WebSocket（`readyState` 还骗你说 `OPEN`），回来后静默重连，不弹错误框
+- **声音**：iOS 手势时机不对导致音频上下文没解锁 → 常驻监听 + 兜底按钮；音频队列原来无上限，积压 2 秒永不消化 → 改成超了就从队头丢，实测延迟 145~185ms
+- **真全屏**：PWA manifest + 图标，加到主屏后没有地址栏；画布按手机真实比例重钉，不再被写死的 padding 挤小
+- **横屏游戏**：手机在跑横屏游戏时，竖着拿 iPhone 也能满屏看——画面自动转 90°，触摸坐标同步反解
+- **证书**：`web/overlay/certs/gen.sh` 重签脚本，叶证书 397 天 + `serverAuth`（iOS 只认 ≤825 天）
+
+> 补丁基线是 `bilbospocketses/ws-scrcpy-web` **v0.5.13**。上游 NetrisTV/ws-scrcpy 结构不同，别直接套。
+
 ## 自启动（可选）
 
 ```bash
@@ -85,3 +106,7 @@ adb devices                  # 状态要是 device
 | WebSocket 一直重连 | 反代/防火墙没放行 Upgrade 头；本项目自带的 gate 已处理，别再套一层 Nginx |
 | iPhone 报证书错误 / 勾了信任还是报 | 证书是旧参数签的（3650 天、没写 serverAuth）。删掉 `web/certs/` 再 `./run.sh start`，会按新参数重签 |
 | 手机烫 | 网页端是持续编码，正常。插电 + 通风 |
+| 画面糊 / 只有 12M | 用了上游原版：服务端只会压码率不会抬，套 `web/overlay/` 补丁 |
+| 声音比画面慢 1~2 秒 | 音频队列积压没上限，套 `web/overlay/` 的 `PcmWorklet`（超限从队头丢） |
+| 切后台回来一直转圈 | iOS 掐死 socket 但 `readyState` 仍报 `OPEN`，需要补丁里的静默自愈 |
+| 横屏游戏在竖屏里只占中间一条 | 套补丁后自动转 90°；若方向反了，改 `custom-ui.js` 里 `rotate(90deg)` 为 `rotate(-90deg)` |

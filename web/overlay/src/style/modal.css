@@ -1,0 +1,1253 @@
+/* ── Native <dialog> modal system ── */
+
+/* ── A note on the noDescendingSpecificity suppressions below (item 122, audited
+   2026-09-09) ──
+   Biome flagged 11 selectors in this file. Every one was checked by hand against
+   the rule it was flagged against, and all 11 are false positives, for one of
+   three reasons:
+
+   1. DISJOINT PROPERTIES (.modal-frame, 6 sites). The high-specificity rules
+      they collide with are the nested-modal and light-theme frame overrides
+      right below, which set `background` and nothing else. Every flagged rule
+      sets opacity/transform/transition or width/max-height — never `background`
+      — so nothing is shadowed either way.
+   2. MUTUALLY EXCLUSIVE DIALOG CLASSES (.modal-body, 3 sites).
+      `dialog.modal.shell-modal` versus `dialog.connect-modal`,
+      `dialog.list-files-modal`, `dialog.service-operation-modal`: a dialog
+      carries exactly one of these, so no element ever matches two of them.
+   3. SIBLING CONTAINERS (.modal-advanced, 2 sites). `.modal-controls` and
+      `.modal-advanced` are SIBLINGS — `ConfigureScrcpy.buildBody()` appends both
+      to the modal body — so an input under one is never under the other.
+
+   The rule assumes a stylesheet ordered by specificity; this one is ordered by
+   component section, which is the right organisation for it and cannot be
+   reconciled with the rule by reordering (moving a block merely re-points the
+   complaint at the next-highest rule above it). So the rule stays ON — it still
+   guards every other selector in this repo, and Biome's own `suppressions/unused`
+   check turns a suppression red once it stops applying — and all 11 sites carry
+   a suppression naming which of the three reasons applies: nine inline, plus one
+   `biome-ignore-start`/`-end` range over the `.modal-advanced` field rule (a
+   selector list needs one suppression per flagged selector, and interleaving
+   comments inside the list makes the formatter rewrap it).
+
+   NOT DONE, deliberately: raising the flagged selectors' specificity to silence
+   the rule "properly". Rewriting the `.modal-advanced` list as
+   `:is(select, input:not([type="checkbox"]))` does exactly that — same match set,
+   specificity (0,3,2) instead of (0,2,2) — and it CHANGES BEHAVIOUR. At (0,2,2)
+   the `select` selector loses to the `:disabled` rule above (also (0,3,2)) and a
+   disabled advanced select keeps its faded background; level them up and this
+   rule, being later, wins instead. Nothing here is worth a visual regression, so
+   the properties stay exactly as they were and only comments were added. */
+
+/* The <dialog> itself is an invisible full-screen positioning layer.
+   padding:0 is critical: clicks on ::backdrop bubble to the <dialog> element,
+   and we detect backdrop clicks by checking event.target === dialog.
+   All visible content lives inside .modal-frame. */
+dialog.modal {
+    padding: 0;
+    border: none;
+    background: transparent;
+    max-width: 100vw;
+    max-height: 100vh;
+    overflow: visible;
+}
+
+/* ── Backdrop ── */
+dialog.modal::backdrop {
+    background: rgba(0, 0, 0, 0.45);
+}
+
+/* ── Glassmorphism frame ── */
+dialog.modal .modal-frame {
+    font-family: var(--font-mono);
+    color: var(--text-color, #ddd);
+    width: clamp(400px, 50vw, 700px);
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    background: rgba(42, 42, 42, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    overflow: hidden;
+}
+
+[data-theme="light"] dialog.modal .modal-frame {
+    background: rgba(245, 248, 252, 0.87);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+}
+
+/* Nested-modal readability: when a second modal opens on top, the top one uses
+   a fully opaque frame so its content is crisp over the lower modal's glass. */
+body:has(dialog.modal[open] ~ dialog.modal[open]) dialog.modal[open]:last-of-type .modal-frame {
+    background: rgb(42, 42, 42);
+}
+
+[data-theme="light"] body:has(dialog.modal[open] ~ dialog.modal[open]) dialog.modal[open]:last-of-type .modal-frame {
+    background: rgb(245, 248, 252);
+}
+
+dialog.modal .modal-frame button,
+dialog.modal .modal-frame select,
+dialog.modal .modal-frame input {
+    font-family: var(--font-mono);
+    font-size: var(--font-size);
+}
+
+dialog.modal .modal-frame select {
+    text-overflow: ellipsis;
+}
+
+/* ── Open/close transitions via @starting-style ──
+   How this works:
+   - Base state (no [open]) = exit-end values (invisible)
+   - [open] state = visible values
+   - @starting-style = entry-start values (invisible, same as base)
+   - allow-discrete on display/overlay keeps dialog rendered during exit transition
+*/
+
+/* Dialog element: transparent container, stays rendered during exit */
+dialog.modal {
+    opacity: 0;
+    transition:
+        opacity 0.2s ease-out,
+        display 0.2s ease-out allow-discrete,
+        overlay 0.2s ease-out allow-discrete;
+}
+
+dialog.modal[open] {
+    opacity: 1;
+}
+
+/* Frame: exit-end state (invisible, scaled down) */
+/* biome-ignore lint/style/noDescendingSpecificity: no background here; the earlier higher-specificity rule sets background only — disjoint properties, see the audit note at the top */
+dialog.modal .modal-frame {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+    transition:
+        opacity 0.2s ease-out,
+        transform 0.2s ease-out;
+}
+
+/* Frame: visible state when open */
+/* biome-ignore lint/style/noDescendingSpecificity: no background here; the earlier higher-specificity rule sets background only — disjoint properties, see the audit note at the top */
+dialog.modal[open] .modal-frame {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+}
+
+/* Backdrop: exit-end state */
+dialog.modal::backdrop {
+    background: rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    transition:
+        opacity 0.2s ease-out,
+        display 0.2s ease-out allow-discrete;
+}
+
+/* Backdrop: visible state when open */
+dialog.modal[open]::backdrop {
+    opacity: 1;
+}
+
+/* Entry animation: these are the "from" values when [open] is first applied */
+@starting-style {
+    dialog.modal[open] {
+        opacity: 0;
+    }
+    dialog.modal[open] .modal-frame {
+        opacity: 0;
+        transform: scale(0.96) translateY(8px);
+    }
+    dialog.modal[open]::backdrop {
+        opacity: 0;
+    }
+}
+
+/* ── Header ── */
+dialog.modal .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--modal-divider);
+    flex-shrink: 0;
+}
+
+dialog.modal .modal-title {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+dialog.modal .modal-header-controls {
+    display: flex;
+    align-items: center;
+    gap: 40px;
+}
+
+/* Reset home-page theme-toggle fixed positioning when it's reused inside a modal */
+dialog.modal .modal-header-controls .theme-toggle {
+    position: static;
+    top: auto;
+    right: auto;
+    z-index: auto;
+    width: auto;
+    height: auto;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+}
+
+dialog.modal .modal-close {
+    background: transparent;
+    border: none;
+    color: var(--text-color-light, #888);
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+    font-size: 18px;
+}
+
+dialog.modal .modal-close:hover {
+    color: var(--text-color, #ddd);
+}
+
+/* ── Body (scrollable) ── */
+dialog.modal .modal-body {
+    padding: 1rem;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+}
+
+/* ── Footer ── */
+dialog.modal .modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--modal-divider);
+    flex-shrink: 0;
+}
+
+/* ── Controls grid (used by ConfigureScrcpy) ── */
+dialog.modal .modal-controls {
+    display: grid;
+    grid-template-columns: [labels] 35% [controls] 1fr;
+    gap: 0.5rem 0.75rem;
+    align-items: center;
+    padding-right: 0.5rem;
+    min-width: 0;
+}
+
+dialog.modal .modal-controls select,
+dialog.modal .modal-controls input {
+    max-width: 100%;
+    box-sizing: border-box;
+    min-width: 0;
+}
+
+dialog.modal .modal-controls .label {
+    grid-column: labels;
+    color: var(--text-color-light, #888);
+    font-size: 13px;
+}
+
+dialog.modal .modal-controls .input,
+dialog.modal .modal-controls select,
+dialog.modal .modal-controls input:not([type="checkbox"]) {
+    grid-column: controls;
+    box-sizing: border-box;
+    background: var(--stream-bg-color, #1a1a2e);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: var(--text-color, #ddd);
+    padding: 4px 8px;
+}
+
+[data-theme="light"] dialog.modal .modal-controls select,
+[data-theme="light"] dialog.modal .modal-controls input:not([type="checkbox"]) {
+    background: #fff;
+    border-color: rgba(0, 0, 0, 0.15);
+    color: #333;
+}
+
+dialog.modal .modal-controls select:focus,
+dialog.modal .modal-controls input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+dialog.modal .modal-controls input:disabled,
+dialog.modal .modal-controls select:disabled,
+dialog.modal .modal-advanced input:disabled,
+dialog.modal .modal-advanced select:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+[data-theme="light"] dialog.modal .modal-controls input:disabled,
+[data-theme="light"] dialog.modal .modal-controls select:disabled,
+[data-theme="light"] dialog.modal .modal-advanced input:disabled,
+[data-theme="light"] dialog.modal .modal-advanced select:disabled {
+    background: #eee;
+}
+
+/* ── Slider ── */
+dialog.modal .modal-controls input[type="range"] {
+    grid-column: controls;
+    width: 100%;
+    cursor: pointer;
+    accent-color: var(--accent-color);
+}
+
+/* ── Advanced toggle ── */
+dialog.modal .modal-advanced-separator {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--modal-divider);
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+}
+
+dialog.modal .modal-advanced-toggle {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    padding: 0.25rem 0;
+    color: var(--text-color-light, #888);
+    font-size: 13px;
+    user-select: none;
+    background: transparent;
+    border: none;
+    width: 100%;
+    font-family: var(--font-mono);
+}
+
+dialog.modal .modal-advanced-toggle:hover {
+    color: var(--text-color, #ddd);
+}
+
+dialog.modal .modal-advanced-toggle .chevron {
+    transition: transform 0.3s ease;
+    font-size: 12px;
+}
+
+dialog.modal .modal-advanced-toggle .chevron.expanded {
+    transform: rotate(180deg);
+}
+
+/* ── Advanced section (animated reveal) ── */
+dialog.modal .modal-advanced {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: [labels] 35% [controls] 1fr;
+    gap: 0.5rem 0.75rem;
+    align-items: center;
+    padding-right: 0.5rem;
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transition:
+        max-height 0.3s ease,
+        opacity 0.3s ease,
+        margin 0.3s ease;
+    margin-top: 0;
+}
+
+dialog.modal .modal-advanced.expanded {
+    max-height: 300px;
+    opacity: 1;
+    margin-top: 0.5rem;
+}
+
+dialog.modal .modal-advanced .label {
+    grid-column: labels;
+    color: var(--text-color-light, #888);
+    font-size: 13px;
+}
+
+/* biome-ignore-start lint/style/noDescendingSpecificity: reason 3 from the note at the top — `.modal-advanced` is a SIBLING of `.modal-controls` (ConfigureScrcpy.buildBody appends both to the modal body), never nested inside it, so no element ever matches both */
+dialog.modal .modal-advanced .input,
+dialog.modal .modal-advanced select,
+dialog.modal .modal-advanced input:not([type="checkbox"]) {
+    grid-column: controls;
+    box-sizing: border-box;
+    width: 100%;
+    background: var(--stream-bg-color, #1a1a2e);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: var(--text-color, #ddd);
+    padding: 4px 8px;
+}
+/* biome-ignore-end lint/style/noDescendingSpecificity: end of the sibling-container block above */
+
+dialog.modal .modal-controls input[type="checkbox"],
+dialog.modal .modal-advanced input[type="checkbox"] {
+    grid-column: controls;
+    justify-self: start;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--accent-color);
+}
+
+[data-theme="light"] dialog.modal .modal-advanced select,
+[data-theme="light"] dialog.modal .modal-advanced input:not([type="checkbox"]) {
+    background: #fff;
+    border-color: rgba(0, 0, 0, 0.15);
+    color: #333;
+}
+
+/* ── Settings buttons ── */
+dialog.modal .modal-settings {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--modal-divider);
+}
+
+dialog.modal .modal-settings button {
+    border: 0.5px solid var(--text-color, #ddd);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--accent-color);
+    padding: 6px 16px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+dialog.modal .modal-settings button:hover {
+    background: var(--device-list-hover-color, hsl(218, 17%, 18%));
+}
+
+/* Shared confirm-dialog button (ConfirmModal, AdminConfirmModal,
+   ShellCloseConfirmModal, ResetConfirmModal; smoke row 4.5). Matches the welcome
+   modal's outline buttons — white outline + white text, transparent, mono font —
+   replacing the browser-default look (the class previously had no CSS). The
+   bookmark / service-first-run reminders that also used it are a non-modal card
+   since item 113 (bookmark-reminder.css). */
+.modal-button {
+    border: 0.5px solid var(--text-color, #ddd);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-color, #ddd);
+    padding: 8px 16px;
+    cursor: pointer;
+    font: inherit;
+}
+
+.modal-button:hover {
+    background: var(--device-list-hover-color, hsl(218, 17%, 18%));
+}
+
+/* ── Status text (footer) ── */
+dialog.modal .status-text {
+    font-size: 13px;
+}
+
+dialog.modal .status-text.status-probing {
+    color: var(--danger-color);
+}
+
+dialog.modal .status-text.status-ready {
+    color: var(--success-color);
+}
+
+dialog.modal .status-text.status-error {
+    color: var(--danger-color);
+}
+
+/* ── Connect button (footer) ── */
+dialog.modal .connect-btn {
+    border: 0.5px solid var(--text-color, #ddd);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--accent-color);
+    padding: 6px 20px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+dialog.modal .connect-btn:hover:not(:disabled) {
+    background: var(--device-list-hover-color, hsl(218, 17%, 18%));
+}
+
+dialog.modal .connect-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* ── Shell modal overrides ── */
+/* biome-ignore lint/style/noDescendingSpecificity: no background here; the earlier higher-specificity rule sets background only — disjoint properties, see the audit note at the top */
+dialog.modal.shell-modal .modal-frame {
+    width: clamp(500px, 90vw, 1600px);
+    max-height: 90vh;
+}
+
+dialog.modal .shell-warning {
+    padding: 4px 1rem;
+    font-size: 11px;
+    color: var(--danger-color);
+    border-bottom: 1px solid var(--modal-divider);
+    flex-shrink: 0;
+}
+
+dialog.modal.shell-modal .modal-body {
+    padding: 0;
+    background: #000;
+    min-height: 600px;
+    position: relative;
+    overflow: hidden;
+}
+
+dialog.modal .terminal-container {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+}
+
+/* ── Connect modal overrides ── */
+/* biome-ignore lint/style/noDescendingSpecificity: no background here; the earlier higher-specificity rule sets background only — disjoint properties, see the audit note at the top */
+dialog.connect-modal .modal-frame {
+    max-height: 90vh;
+    width: fit-content;
+    max-width: 95vw;
+}
+
+/* biome-ignore lint/style/noDescendingSpecificity: dialog.connect-modal and dialog.modal.shell-modal are mutually exclusive — no element matches both */
+dialog.connect-modal .modal-body {
+    padding: 0;
+    display: flex;
+    flex-direction: row;
+    overflow: hidden;
+    background: #000;
+}
+
+/* Stream layout (.device-view, .video, .control-buttons-list) lives in
+ * ws-scrcpy.css and is shared with embed.html. The modal-body above is the
+ * flex parent that gives .device-view its box.
+ *
+ * The modal still needs to cap the canvas layers: StreamClientScrcpy.getMaxSize()
+ * bounds the canvas to window.innerWidth/Height, but the modal-frame is
+ * constrained to max 95vw × 90vh. Without these caps, the canvas overflows the
+ * frame and gets clipped by the modal-body's `overflow: hidden`. */
+dialog.connect-modal .video-layer,
+dialog.connect-modal .touch-layer {
+    max-width: calc(95vw - 3.715rem);
+    max-height: calc(90vh - 2.5rem);
+}
+
+/* iOS Safari 的 100vh 把折叠的地址栏/工具栏也算进去，窗口和画布的上限就比
+ * 真正看得见的区域高，底部于是跑到屏幕外（表现为“最下面显示不到”）。
+ * dvh 跟随可见视口，用它再封一层；不支持的浏览器仍走上面的 vh 版本。 */
+@supports (height: 100dvh) {
+    dialog.connect-modal .modal-frame {
+        max-height: 92dvh;
+    }
+    dialog.connect-modal .video-layer,
+    dialog.connect-modal .touch-layer {
+        max-height: calc(92dvh - 3.2rem);
+    }
+}
+
+/* ── List files modal overrides ── */
+/* biome-ignore lint/style/noDescendingSpecificity: no background here; the earlier higher-specificity rule sets background only — disjoint properties, see the audit note at the top */
+dialog.list-files-modal .modal-frame {
+    width: clamp(500px, 70vw, 900px);
+    max-height: 85vh;
+}
+
+/* biome-ignore lint/style/noDescendingSpecificity: dialog.list-files-modal and dialog.modal.shell-modal are mutually exclusive — no element matches both */
+dialog.list-files-modal .modal-body {
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* ── Settings modal ── */
+/* Wider than the base modal: the Settings modal has accreted enough sections
+   (service scope, updates, App-section) that long info/error text
+   wrapped into many lines and pushed the content past max-height -> a vertical
+   scrollbar. The extra horizontal room lets that text breathe (fewer wrapped
+   lines -> shorter content). Scoped to .settings-modal so the small confirm
+   modals (AdminConfirmModal etc.) stay narrow. */
+/* biome-ignore lint/style/noDescendingSpecificity: no background here; the earlier higher-specificity rule sets background only — disjoint properties, see the audit note at the top */
+dialog.settings-modal .modal-frame {
+    width: clamp(460px, 66vw, 820px);
+    /* 95vh (not the base 80vh / prior 85vh): the App + Updates + Service
+       sections together are tall enough that 85vh forced an inner scrollbar on
+       smaller viewports. 95vh leaves a ~2.5% margin top/bottom so the frame
+       doesn't kiss the screen edges; long sections still scroll inside. */
+    max-height: 95vh;
+}
+
+/*
+ * Tab strip + panel (TabStrip.ts). Sections themselves are unchanged — each
+ * tab body is still a .settings-section, just hidden/shown by TabStrip
+ * instead of stacked in one long scroll. Every body is built and attached up
+ * front (see TabStrip's class doc); only the active one is unhidden, via the
+ * native `hidden` attribute, which needs no rule of its own here as long as
+ * nothing above sets `display` on `.settings-section` (nothing does).
+ */
+dialog.settings-modal .settings-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--modal-divider);
+    margin-bottom: 0.5rem;
+}
+
+dialog.settings-modal .settings-tab {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    padding: 0.5rem 0.9rem;
+    font: inherit;
+    font-size: 13px;
+    color: var(--text-color-light, #888);
+    cursor: pointer;
+}
+
+dialog.settings-modal .settings-tab:hover {
+    color: var(--text-color, #ddd);
+}
+
+dialog.settings-modal .settings-tab--active {
+    color: var(--text-color, #ddd);
+    border-bottom-color: var(--accent-color);
+    font-weight: 600;
+}
+
+dialog.settings-modal .settings-tab-panel {
+    display: block;
+}
+
+/* No divider of its own: since 0.5.5 the tab's card is the separator. */
+dialog.settings-modal .settings-section {
+    padding: 0.75rem 0;
+}
+
+/* The Dependencies panel's own h2 (home.css .home-section h2), so every tab's
+   title reads the same as that one's. */
+dialog.settings-modal .settings-section-heading {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 0.75rem;
+}
+
+/*
+ * A Settings card (0.5.5, settingsLayout.ts): the Dependencies tab's card look
+ * (home.css .section-card) around every tab's settings. The background is a
+ * token, declared in both theme blocks (app.css), and solid: a translucent card
+ * let the page behind the dialog show through. The Dependencies panel's own
+ * card and the Local HTTPS callout use the same token inside the dialog (below),
+ * so all three match in either theme.
+ */
+dialog.settings-modal .settings-card {
+    border: 1px solid var(--device-border-color);
+    border-radius: 8px;
+    padding: 4px 16px;
+    background: var(--settings-card-bg);
+}
+
+dialog.settings-modal .settings-card[hidden] {
+    display: none;
+}
+
+/*
+ * A card straight after another, with no heading between them: an untitled
+ * card (settingsLayout.ts's addUntitledCard; 0.5.8). The space above it is the
+ * top margin a card heading would have given it, so it never touches the card
+ * before.
+ */
+dialog.settings-modal .settings-card + .settings-card {
+    margin-top: 1.25rem;
+}
+
+/* The Dependencies panel's own card (home.css .section-card), inside the dialog. */
+dialog.settings-modal .section-card {
+    background: var(--settings-card-bg);
+}
+
+/*
+ * A card's heading on a tab split into several cards (Server, Local HTTPS):
+ * the size and spacing of the tab title it stands in for, with room above it
+ * to set it off from the card before. The first one sits where the title
+ * would have (the title is visually hidden on a split tab).
+ */
+dialog.settings-modal .settings-card-heading {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-color);
+    margin: 1.25rem 0 0.75rem;
+}
+
+dialog.settings-modal .settings-card-heading:first-of-type {
+    margin-top: 0;
+}
+
+/*
+ * A Settings item: one setting and the notes under it (settingsLayout.ts's
+ * buildItem). Each item is a two-column CSS grid mirroring .modal-controls in
+ * ConfigureScrcpy: labels on the left, every control on the right at the same
+ * x-coordinate across all items, cards and tabs. Notes span both columns.
+ */
+dialog.settings-modal .settings-item {
+    display: grid;
+    /* Labels fixed so the controls boundary doesn't shift when dynamic label
+       text changes (status messages, version strings) or when button text
+       changes (install/uninstall states). 18rem, not the 20rem it was before
+       the cards: the card's padding takes ~2rem, and the Embedding add row
+       must still fit on one line at 1280px. Every tab is in a card, so the
+       controls still line up across tabs. Controls take 1fr: a fixed controls
+       column sized against Windows font rendering ("not installed —
+       install?" ≈ 231px at 13px monospace) wrapped on Linux, where the same
+       monospace string renders ~10% wider. Flexing it gives Linux the room
+       without affecting Windows (controls hug left via .settings-control's
+       flex-start, so the extra width is empty space to their right). */
+    grid-template-columns: [labels] 18rem [controls] 1fr;
+    align-items: center;
+    gap: 0.25rem 1rem;
+    padding: 0.6rem 0;
+}
+
+/*
+ * An item with nothing showing takes no space: every child hidden (a row the
+ * tab has not revealed yet, a status line with nothing to say), or the item
+ * itself hidden. Keyed on the `hidden` attribute, which is why rows are hidden
+ * through settingsLayout.ts's setRowShown (the attribute as well as the inline
+ * display their `display: contents` needs).
+ */
+dialog.settings-modal .settings-item[hidden],
+dialog.settings-modal .settings-item:not(:has(> :not([hidden]))) {
+    display: none;
+}
+
+/*
+ * The dividing line, the Dependencies table's row line, drawn ABOVE every
+ * showing item that has a showing item before it: so there is a line between
+ * any two items on screen, and none after the last one, however many items
+ * after it are hidden. (A line BELOW each item, cleared on the last one
+ * showing, would need a `:has()` inside a `:has()`, which CSS does not allow.)
+ */
+dialog.settings-modal
+    .settings-item:not([hidden]):has(> :not([hidden]))
+    ~ .settings-item:not([hidden]):has(> :not([hidden])) {
+    border-top: 1px solid var(--button-border-color);
+}
+
+/*
+ * An item that carries a live exposure (Users: remote admin without sign-in,
+ * on): the look of the home page banner it replaced (admin-scope-banner.css's
+ * `--warning` state, removed in 0.5.5) — the header background, a warning
+ * border, a bold warning-colored title, the note as plain muted body text.
+ * The negative side margin keeps its labels on the same x as the items around
+ * it. The second selector matches the dividing line's rule above, so the box's
+ * own border wins over that line.
+ */
+dialog.settings-modal .settings-item.settings-item--alert,
+dialog.settings-modal
+    .settings-item:not([hidden]):has(> :not([hidden]))
+    ~ .settings-item.settings-item--alert:not([hidden]):has(> :not([hidden])) {
+    border: 1px solid var(--warning-color);
+    border-radius: 6px;
+    background-color: var(--header-bg-color);
+    padding: 0.6rem 0.75rem;
+    margin: 0.4rem -0.75rem;
+}
+
+dialog.settings-modal .settings-alert-title {
+    color: var(--warning-color);
+    font-weight: 600;
+    font-size: 13px;
+}
+
+dialog.settings-modal .settings-row {
+    display: contents;
+}
+
+/*
+ * The Dependencies tab's body: a two-column grid whose children all span both
+ * columns (its placeholder, then the dependency panel). Every other tab uses
+ * .settings-card and .settings-item above.
+ */
+dialog.settings-modal .settings-section-body {
+    display: grid;
+    grid-template-columns: [labels] 20rem [controls] 1fr;
+    align-items: center;
+    gap: 0.5rem 1rem;
+}
+
+/*
+ * Error rows stretch out. The error message is rendered on the row's label,
+ * which normally lives in the fixed 20rem [labels] column — too narrow for the
+ * longer service/update errors. When a row's label carries .settings-status-error,
+ * lift the whole row out of `display: contents` into a full-width block spanning
+ * both columns so the error wraps across the full width; the retry/save button
+ * drops beneath it. (Status notes already span via grid-column:1/-1 on a <p>.)
+ */
+dialog.settings-modal .settings-row:has(.settings-status-error) {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+    grid-column: 1 / -1;
+}
+
+dialog.settings-modal .settings-label {
+    grid-column: labels;
+    color: var(--text-color-light, #888);
+    font-size: 13px;
+    /* Equal row heights across the whole modal — sets the visual rhythm.
+       Long labels (status messages, descriptive notes) wrap within the
+       40% column rather than pushing the modal wide. */
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    line-height: 1.4;
+    word-break: break-word;
+    padding-right: 0.75rem;
+}
+
+/* A row with no control (settingsLayout.ts's buildRow(label, null)): a line of
+   text, like a note, so it spans both columns instead of wrapping in the
+   labels one beside an empty controls cell. */
+dialog.settings-modal .settings-label.settings-label-wide {
+    grid-column: 1 / -1;
+}
+
+/*
+ * Right-column wrapper. Multi-control rows (radios, checkbox+text)
+ * use this to lay them out in a flex row inside the grid cell.
+ * min-height matches .settings-label so rows stay flush at 32px.
+ * justify-content stays at flex-start (default) so controls hug the
+ * left edge of the right column — buttons align with inputs above
+ * them across all rows.
+ */
+dialog.settings-modal .settings-control {
+    grid-column: controls;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+    min-height: 32px;
+}
+
+dialog.settings-modal .settings-control .settings-radio-label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--text-color, #ddd);
+    font-size: 13px;
+    cursor: pointer;
+    margin: 0;
+}
+
+/* Bright accent so the radio's selected dot stays visible even when the label
+ * is muted (locked scope). Matches the app's checkboxes/range controls. The
+ * radio is never `disabled` (Chromium desaturates accent-color on :disabled),
+ * so this dot renders at full saturation in both the active and locked state. */
+dialog.settings-modal .settings-control .settings-radio-label input[type="radio"] {
+    accent-color: var(--accent-color);
+}
+
+/*
+ * Locked radio (service scope while a service is installed): mute the whole
+ * label so the read-only state reads at a glance, and block interaction with
+ * pointer-events. We do NOT use the `disabled` attribute — Chromium
+ * desaturates accent-color on :disabled controls, which hid the selected dot
+ * (item 42). The radio stays enabled (accent-color renders) and is locked via
+ * this class (set by lockScopeRadioControl) plus tabindex=-1 on the input.
+ */
+dialog.settings-modal .settings-control .settings-radio-label.settings-radio-locked {
+    opacity: 0.65;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+/*
+ * Apply-update button styling — green outline + green text — mirroring
+ * the home-page UpdateButton chip's "ready" state. Higher specificity
+ * than .settings-btn-primary so it overrides when both classes are
+ * present (used in the Updates section's dual-purpose button).
+ */
+dialog.modal .settings-btn.settings-btn-ready {
+    color: var(--success-color);
+    border-color: var(--success-color);
+}
+
+dialog.modal .settings-btn.settings-btn-ready:hover {
+    background: rgba(var(--success-rgb), 0.08);
+}
+
+dialog.settings-modal .settings-input {
+    box-sizing: border-box;
+    background: var(--stream-bg-color, #1a1a2e);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: var(--text-color, #ddd);
+    padding: 4px 8px;
+    width: 100%;
+    max-width: 240px;
+    font: inherit;
+}
+
+dialog.settings-modal .settings-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+[data-theme="light"] dialog.settings-modal .settings-input {
+    background: #fff;
+    border-color: rgba(0, 0, 0, 0.15);
+}
+
+/*
+ * A disabled field reads as unavailable at a glance (the Server tab's https
+ * port until mkcert and a certificate exist; the Local HTTPS subject controls
+ * until mkcert is installed), matching .settings-btn:disabled below. Without
+ * it the themed background above made a disabled box look editable.
+ */
+dialog.settings-modal .settings-input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+dialog.modal .settings-btn {
+    border: 0.5px solid var(--text-color, #ddd);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-color, #ddd);
+    padding: 6px 14px;
+    cursor: pointer;
+    font: inherit;
+}
+
+dialog.modal .settings-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+dialog.modal .settings-btn-primary {
+    color: var(--accent-color);
+    border-color: var(--accent-color);
+}
+
+dialog.modal .settings-btn-danger {
+    color: var(--danger-color);
+    border-color: var(--danger-color);
+}
+
+dialog.modal .settings-btn-danger-outline {
+    color: var(--danger-color);
+    border-color: var(--danger-color);
+    background: transparent;
+}
+
+dialog.settings-modal .settings-status {
+    margin: 0.25rem 0 0;
+    /* Notes + status read as sub-text of the setting they annotate: indented +
+       italic to set them apart. Plain help reads as a muted aside, so it is not
+       bold (0.5.5); errors and warnings add their color AND the weight
+       (.settings-status-error / -warning, layered on top, so they inherit this
+       indent and style). */
+    padding-left: 1.25rem;
+    color: var(--text-color-light, #888);
+    font-size: 13px;
+    min-height: 1em;
+    font-style: italic;
+    font-weight: 400;
+}
+
+dialog.settings-modal .settings-status-error {
+    color: var(--danger-color);
+}
+
+/*
+ * Status text turns green when an update is ready to apply, mirroring
+ * the .settings-btn-ready button color (var(--success-color)) so the description
+ * and action visually pair — "update: vX.Y.Z" + green "apply update"
+ * button reinforce one another.
+ */
+dialog.settings-modal .settings-status-ready {
+    color: var(--success-color);
+}
+
+/*
+ * Local HTTPS panel notices (notifications 3-9): a warning-toned variant of
+ * .settings-status, layered the same way .settings-status-error is above.
+ * Deliberately sets NO `display` -- these rows are shown/hidden via the HTML
+ * `hidden` attribute (see LocalHttpsTab.ts's buildNoticeRow/setNotice), and this
+ * repo already found the bug where a class rule setting `display` outranks
+ * the UA stylesheet's `[hidden] { display: none }` and leaves a "hidden"
+ * element on screen (.dependency-alert-badge, above).
+ */
+dialog.settings-modal .settings-status-warning {
+    color: var(--warning-color);
+}
+
+/*
+ * A note that is an error or a warning keeps the bold the plain notes lost in
+ * 0.5.5, so it still stands out from the help around it. On the note only: an
+ * error shown on a row's LABEL (an update or service failure) keeps the
+ * label's own weight, as it always has.
+ */
+dialog.settings-modal .settings-status.settings-status-error,
+dialog.settings-modal .settings-status.settings-status-warning {
+    font-weight: 600;
+}
+
+/*
+ * M3: re-asserted on the BASE `.settings-status` class, not just the
+ * `-warning` variant above -- every conditionally-hidden element in this
+ * dialog (the Local HTTPS panel's notices AND its bottom-of-panel transient
+ * alert, which toggles `.settings-status-error`/`-ready` on top of this same
+ * base class, plus every plain `.settings-status` status line elsewhere in
+ * Settings) carries `.settings-status`, so one rule here at (0,2,0)
+ * specificity (class + attribute) outranks a hypothetical future `display`
+ * added to ANY of `.settings-status-error`/`-ready`/`-warning` at (0,1,0),
+ * regardless of source order. A rule scoped to only one variant would have
+ * left every other variant exposed to the exact bug this guards against.
+ */
+dialog.settings-modal .settings-status[hidden] {
+    display: none;
+}
+
+/*
+ * A tab's one status line (every tab's since 0.5.5, settingsLayout.ts
+ * `buildTabAlert`): at the bottom of the tab, below and outside its cards, set
+ * off from the last card so it never reads as one of that card's notes. It is
+ * a live region that stays in the accessibility tree, so it is never `hidden`:
+ * idle, it is empty, and `:empty` takes away its margin and minimum height so
+ * it costs no room.
+ */
+dialog.settings-modal .settings-status.settings-tab-alert {
+    margin-top: 0.75rem;
+}
+
+dialog.settings-modal .settings-status.settings-tab-alert:empty {
+    margin: 0;
+    min-height: 0;
+}
+
+/* Inside an alert item (`.settings-item--alert`, above), the note is the box's
+   plain muted body text, as on the home page banner it replaced. */
+dialog.settings-modal .settings-item--alert .settings-status {
+    padding-left: 0;
+    color: var(--text-color-light);
+    font-style: normal;
+}
+
+/*
+ * A help link inside a Settings status line (the Local HTTPS tab's install
+ * guide and certificate-subject explainer, 0.5.3). Theme tokens, so it reads in
+ * both themes; underlined so it is a link without relying on color alone. The
+ * per-OS trust accordion these links replaced is gone, and its rules with it.
+ */
+dialog.settings-modal .settings-help-link {
+    color: var(--link-color);
+    text-decoration: underline;
+}
+
+/*
+ * A boxed callout at the top of a Settings tab (the Local HTTPS tab's "install
+ * mkcert" notice, above its heading): the Dependencies tab's card look
+ * (home.css .section-card), restated here rather than borrowing home.css
+ * classes inside the dialog, in the warning tone so it stands out from the
+ * tab. No `display` of its own, so `hidden` keeps working (see
+ * .settings-status-warning above); the [hidden] rule below re-asserts it.
+ * The cards' background token, so it matches them in either theme.
+ */
+dialog.settings-modal .settings-callout {
+    margin: 0 0 0.75rem;
+    border: 1px solid var(--device-border-color);
+    border-radius: 8px;
+    padding: 16px;
+    background: var(--settings-card-bg);
+    color: var(--warning-color);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+dialog.settings-modal .settings-callout[hidden] {
+    display: none;
+}
+
+/*
+ * An in-page action that reads as a link inside running text (the callout's
+ * "dependencies tab"): a real <button>, so it is in the tab order, with the
+ * button chrome taken away. It takes its color from the text around it,
+ * bold and underlined so it is a link without relying on color alone.
+ */
+dialog.settings-modal .settings-inline-link {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    font-weight: 700;
+    color: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+dialog.settings-modal .settings-inline-link:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
+/*
+ * A combobox (0.5.5, Combobox.ts): a text box with a ▾ button attached to its
+ * right edge that opens a list of suggestions under it -- the Local HTTPS
+ * certificate subject, where the list is this computer's addresses. The button
+ * borrows .settings-input's look (it carries that class too), so the two read
+ * as one control in both themes.
+ */
+dialog.settings-modal .settings-combo {
+    position: relative;
+    display: inline-flex;
+    align-items: stretch;
+}
+
+dialog.settings-modal .settings-combo .settings-combo-input {
+    width: 15.5rem;
+    max-width: none;
+}
+
+dialog.settings-modal .settings-combo:has(.settings-combo-button:not([hidden])) .settings-combo-input {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+dialog.settings-modal .settings-combo .settings-combo-button {
+    width: auto;
+    max-width: none;
+    border-left: none;
+    border-radius: 0 6px 6px 0;
+    padding: 0 8px;
+    color: var(--text-color-light);
+    cursor: pointer;
+}
+
+dialog.settings-modal .settings-combo .settings-combo-button:disabled {
+    cursor: not-allowed;
+}
+
+dialog.settings-modal .settings-combo .settings-combo-button[hidden] {
+    display: none;
+}
+
+dialog.settings-modal .settings-combo-list {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    z-index: 5;
+    margin: 0;
+    padding: 4px 0;
+    list-style: none;
+    max-height: 12rem;
+    overflow-y: auto;
+    background: var(--stream-bg-color);
+    border: 1px solid var(--device-border-color);
+    border-radius: 6px;
+    box-shadow: var(--settings-popup-shadow);
+}
+
+/* The same white as the box it drops from (.settings-input's light override). */
+[data-theme="light"] dialog.settings-modal .settings-combo-list {
+    background: #fff;
+}
+
+dialog.settings-modal .settings-combo-list[hidden] {
+    display: none;
+}
+
+dialog.settings-modal .settings-combo-option {
+    position: relative;
+    padding: 4px 10px 4px 26px;
+    color: var(--text-color);
+    cursor: pointer;
+}
+
+/* The option the pointer or the arrow keys are on. */
+dialog.settings-modal .settings-combo-option:hover,
+dialog.settings-modal .settings-combo-option.settings-combo-option-active {
+    background: var(--device-list-hover-color);
+}
+
+/* The value the box holds now, ticked. The empty alternative text keeps the
+   tick out of the option's accessible name: aria-selected already says it, and
+   "check mark 192.168.1.5" is what a screen reader would read otherwise. */
+dialog.settings-modal .settings-combo-option[aria-selected="true"]::before {
+    content: "✓" / "";
+    position: absolute;
+    left: 9px;
+    color: var(--accent-color);
+}
+
+/*
+ * A staged-but-unsaved entry in a Settings list (the Embedding tab's pending
+ * embedders, 0.5.3): the warning tone and the status lines' italic, beside the
+ * entry it marks, so "not saved yet" reads at a glance and not by color alone.
+ */
+dialog.settings-modal .settings-pending-tag {
+    margin-left: 0.5rem;
+    color: var(--warning-color);
+    font-style: italic;
+    font-weight: 600;
+}
+
+/* Plain help, like a .settings-status note: italic, not bold (0.5.5). */
+dialog.settings-modal .settings-stub-note {
+    margin: 0;
+    padding-left: 1.25rem;
+    color: var(--text-color-light, #888);
+    font-size: 13px;
+    font-style: italic;
+    font-weight: 400;
+}
+
+/*
+ * v0.1.23-stable: per-section legacy layout overrides removed.
+ * All sections now use the unified .settings-item grid above.
+ * Section-specific input widths handled inline (max-width on the
+ * .settings-input itself).
+ */
+
+/* --- Service operation modal (Phase 3) --- */
+
+dialog.service-operation-modal .modal-header-controls {
+    display: none;
+}
+
+/* biome-ignore lint/style/noDescendingSpecificity: dialog.service-operation-modal and dialog.modal.shell-modal are mutually exclusive — no element matches both */
+dialog.service-operation-modal .modal-body {
+    text-align: center;
+    padding: 1rem 0;
+}
+
+.service-operation-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border-muted);
+    border-top-color: var(--accent-color);
+    border-radius: 50%;
+    margin: 0 auto 1rem;
+    animation: service-op-spin 0.8s linear infinite;
+}
+
+@keyframes service-op-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}

@@ -1,0 +1,194 @@
+/* 小月的投屏增强层：全屏 / 侧栏隐藏式（从右侧滑出）
+ * 只加样式，不动原逻辑。类挂在 <html> 上：x-full=全屏，x-side=侧栏展开 */
+
+/* ── 全屏 ───────────────────────────────────────────── */
+html.x-full dialog.connect-modal .modal-frame {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    width: 100dvw;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+    background: #000;
+    z-index: 2147483000;
+}
+
+html.x-full dialog.connect-modal .modal-header {
+    display: none;
+}
+
+html.x-full dialog.connect-modal .modal-body {
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    padding: 0;
+    overflow: hidden;
+}
+
+html.x-full dialog.connect-modal .device-view {
+    width: 100vw;
+    width: 100dvw;
+    height: 100vh;
+    height: 100dvh;
+    padding: 0;
+    gap: 0;
+    position: relative;
+}
+
+html.x-full dialog.connect-modal .video {
+    width: 100vw;
+    width: 100dvw;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    /* 只给硬件的安全区让位（刘海/底部横条），不再写死 8px/44px —
+       写死会白白吃掉一圈画面，用户看到的就是"点了全屏还是没铺满"。 */
+    padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px);
+    box-sizing: border-box;
+}
+
+/* 画面自己带一点圆角，和机身弧线呼应，不再“上直下圆” */
+html.x-full dialog.connect-modal canvas.video-layer {
+    border-radius: 14px;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, .06);
+}
+
+html.x-full dialog.connect-modal canvas.video-layer,
+html.x-full dialog.connect-modal .video-layer {
+    /* 为什么不用 height:100%：.video 是 grid 容器，行高 auto → 百分比高度解析成 auto，
+       canvas 就按容器宽度铺满、竖向溢出被裁。用 dvh 直接算死才可控。 */
+    height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+    height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+    width: auto !important;
+    max-height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+    max-width: 100vw !important;
+    max-width: 100dvw !important;
+    display: block !important;
+}
+
+/* ── 侧栏：默认收起，需要时从右侧滑出 ───────────────── */
+dialog.connect-modal .device-view {
+    position: relative;
+}
+
+dialog.connect-modal .control-buttons-list.control-wrapper {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 40;
+    transform: translateX(103%);
+    transition: transform .22s ease;
+    background: rgba(18, 18, 20, .94);
+    border-radius: 10px 0 0 10px;
+    padding-left: 6px;
+    overflow-y: auto;
+}
+
+html.x-side dialog.connect-modal .control-buttons-list.control-wrapper {
+    transform: translateX(0);
+}
+
+/* 侧栏展开时铺一层透明遮罩：点画面就收起（画面上盖着 touch-layer，
+   触摸事件全被它吃掉，不产生 click，所以只能靠这层挡在前面接手势） */
+dialog.connect-modal .x-side-backdrop {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 39;
+    background: rgba(0, 0, 0, .18);
+}
+
+html.x-side dialog.connect-modal .x-side-backdrop {
+    display: block;
+}
+
+/* 宽屏（桌面）保持原样，别把习惯改掉 */
+@media (min-width: 900px) {
+    dialog.connect-modal .control-buttons-list.control-wrapper {
+        position: static;
+        transform: none;
+        background: transparent;
+        border-radius: 0;
+        overflow: visible;
+    }
+}
+
+/* ── 悬浮工具条（全屏/侧栏/关闭） ─────────────────────── */
+.x-ui-bar {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 6px;
+    display: flex;
+    gap: 10px;
+    z-index: 2147483600;
+}
+
+.x-ui-bar button {
+    width: 30px;
+    height: 30px;
+    border: 0;
+    border-radius: 15px;
+    background: rgba(30, 30, 34, .55);
+    color: #eaeaea;
+    font-size: 14px;
+    line-height: 30px;
+    text-align: center;
+    padding: 0;
+    opacity: .50;
+    transition: opacity .18s ease, background .18s ease;
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    touch-action: manipulation;
+}
+
+.x-ui-bar button:active,
+.x-ui-bar button:hover {
+    opacity: 1;
+    background: rgba(60, 60, 68, .85);
+}
+
+html.x-full .x-ui-bar {
+    opacity: .50;
+}
+
+html.x-full .x-ui-bar:hover,
+html.x-full .x-ui-bar:active {
+    opacity: 1;
+}
+
+/* ── 右边缘热区：手指从边上往里划就拉出侧栏 ───────────── */
+.x-edge-handle {
+    position: fixed;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 72px;
+    border-radius: 8px 0 0 8px;
+    background: rgba(130, 130, 140, .40);
+    z-index: 2147483500;
+    touch-action: none;
+    display: none;
+}
+
+html.is-streaming .x-edge-handle {
+    display: block;
+}
+
+html.x-side .x-edge-handle {
+    display: none;
+}
+
+/* 全屏时把状态栏让出来一点，避免 iOS 下拉手势误触 */
+html.x-full body {
+    overscroll-behavior: none;
+    background: #000;
+}

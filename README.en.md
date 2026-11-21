@@ -88,6 +88,8 @@ powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\ScrcpyCompanion\bin\
 
 **iPhone / iPad path**: `cd web && ./run.sh setup && ./run.sh start`, then open the `https://<lan-ip>:9443/` it prints. See [web/README.md](web/README.md).
 
+**Optional polish**: `web/overlay/` contains the fixes that turn this from "it works" into "usable every day" — fullscreen PWA (no address bar), audio that stays in sync (the worklet queue was unbounded and drifted 2s), silent reconnect after iOS kills the background WebSocket, forced max bitrate, and a 90° rotation so a landscape game fills a portrait phone. Apply with `./web/overlay/apply.sh ./web/ws-scrcpy` then `npm run build`. Baseline: `bilbospocketses/ws-scrcpy-web` v0.5.13. Details: [web/overlay/README.md](web/overlay/README.md).
+
 ## Configuration
 
 `%LOCALAPPDATA%\ScrcpyCompanion\config.json`

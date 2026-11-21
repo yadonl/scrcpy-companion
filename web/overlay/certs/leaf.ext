@@ -1,0 +1,6 @@
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature,keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = IP:192.168.5.2, IP:127.0.0.1, DNS:nas.local, DNS:localhost, DNS:ccnas-1.tail927b7c.ts.net
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid,issuer
