@@ -7,9 +7,19 @@ export const PCM_WORKLET_NAME = 'pcm-worklet';
  * 积压永远不消失，于是一路慢到底。AudioContext 自身的延迟只有几十毫秒，
  * 所以必须由我们自己「追帧」：积压超过 MAX 就从最老的样本开始丢，丢回到
  * TARGET。丢的是最早的声音，人耳感觉就是"一开就有声、立刻对齐"，比越拖越远好。
+ *
+ * 「啵、啵、啵」的根因（同日）：解码 60fps 高清视频会把主线程按几十毫秒地卡住，
+ * 送音频的 onmessage 跟着断续 —— 队列一空就往输出里写 0，波形从满幅直接掉到 0，
+ * 一次就是一声咔哒，一秒三四次、很有规律。丢样本（_trim）同理：从波形中间剪断，
+ * 接缝也是一声。所以两头都做淡变：
+ *   * 断粮：把尾巴 1.3ms 淡出，接进来的第一块淡入；
+ *   * 丢样本：接缝处淡入。
+ * 目标水位也从 90ms 抬到 150ms —— 90ms 太薄，扛不住主线程抖动。
  */
-const MAX_MS = 200;
-const TARGET_MS = 90;
+const MAX_MS = 300;
+const TARGET_MS = 150;
+/** 淡入淡出的采样帧数（48kHz 下约 1.3ms：听不出来，但足以消掉跳变） */
+const FADE_FRAMES = 64;
 
 export const PCM_WORKLET_SOURCE = `
 class PcmWorkletProcessor extends AudioWorkletProcessor {
@@ -20,6 +30,10 @@ class PcmWorkletProcessor extends AudioWorkletProcessor {
         this._rate = sampleRate;   // 由 AudioWorkletGlobalScope 提供
         this._max = this._rate * ${MAX_MS} / 1000;
         this._target = this._rate * ${TARGET_MS} / 1000;
+        this._fade = ${FADE_FRAMES};
+        /** 刚断过粮 / 丢过样本 → 下一块要从 0 淡入 */
+        this._needFadeIn = false;
+        this._underruns = 0;
         this.port.onmessage = (e) => {
             if (e.data && e.data.reset) {
                 this._queue = [];
@@ -39,6 +53,7 @@ class PcmWorkletProcessor extends AudioWorkletProcessor {
 
     /* 积压超过上限就从队头丢样本，直到回落到 target（延迟优先于完整性） */
     _trim() {
+        let dropped = false;
         while (this._queued > this._max && this._queue.length > 0) {
             const b = this._queue[0];
             const remaining = b.numFrames - b.offset;
@@ -51,7 +66,10 @@ class PcmWorkletProcessor extends AudioWorkletProcessor {
                 b.offset += overflow;
                 this._queued -= overflow;
             }
+            dropped = true;
         }
+        // 从波形中间剪断 = 一声咔哒，接缝处淡入
+        if (dropped) this._needFadeIn = true;
     }
 
     process(inputs, outputs) {
@@ -80,17 +98,35 @@ class PcmWorkletProcessor extends AudioWorkletProcessor {
             }
         }
 
-        // Fill remaining with silence (underrun)
-        if (written < frameCount) {
+        // 断过粮 / 丢过样本：接进来的第一块从 0 淡入
+        if (this._needFadeIn && written > 0) {
+            const n = Math.min(this._fade, written);
             for (let ch = 0; ch < outChannels; ch++) {
-                output[ch].fill(0, written);
+                const buf = output[ch];
+                for (let i = 0; i < n; i++) buf[i] *= i / n;
             }
+            this._needFadeIn = false;
         }
 
-        // 每秒回报一次积压毫秒数（排障用：正常应稳定在目标值附近，不是 2000）
+        // 断粮：尾巴淡出再把剩下的补 0，别从满幅直接跳 0
+        if (written < frameCount) {
+            this._underruns++;
+            const n = Math.min(this._fade, written);
+            for (let ch = 0; ch < outChannels; ch++) {
+                const buf = output[ch];
+                for (let i = 0; i < n; i++) buf[written - 1 - i] *= i / n;
+                buf.fill(0, written);
+            }
+            this._needFadeIn = true;
+        }
+
+        // 每秒回报一次：积压毫秒数 + 断粮次数（排障用）
         if (currentTime - this._lastReport >= 1) {
             this._lastReport = currentTime;
-            this.port.postMessage({ queuedMs: Math.round(this._queued / this._rate * 1000) });
+            this.port.postMessage({
+                queuedMs: Math.round(this._queued / this._rate * 1000),
+                underruns: this._underruns,
+            });
         }
 
         return true;
