@@ -425,6 +425,14 @@ export class StreamClientScrcpy
     private static readonly RESUME_PROACTIVE_AFTER_MS = 5000;
     /** 手机可能正从睡眠里醒来、adb 还没回来：一轮接不上就再来一轮 */
     private static readonly RESUME_MAX_ATTEMPTS = 6;
+    /**
+     * 同一页只允许一条流。
+     *
+     * 两条流会抢同一台手机：B 起新会话 → 服务端杀掉 A 的会话 → A 自愈再起 →
+     * 又把 B 杀掉，两个人整晚互相踢。页面上曾经出现两个投屏窗口（深链自动恢复
+     * + 手动打开各一次）就是这个后果。
+     */
+    private static active: StreamClientScrcpy | undefined = undefined;
     private resumeAttempts = 0;
     /** 用户是否已经有过手势（iOS 靠它决定能不能唤醒 AudioContext） */
     private userInteracted = false;
@@ -441,9 +449,12 @@ export class StreamClientScrcpy
      */
     private watchAudioState(container?: HTMLElement): void {
         let tries = 0;
+        // 一直盯着（1 秒一跳），直到出声或流结束：
+        //   * 自动恢复要留时间 —— 切回前台时会连试几次 resume；
+        //   * 声音也可能过一会儿自己回来，那这个提示得自己消失，不能赖在屏幕上。
         const tick = window.setInterval(() => {
             tries++;
-            if (!this.audioPlayer) {
+            if (!this.audioPlayer || this.isStopping) {
                 window.clearInterval(tick);
                 return;
             }
@@ -454,29 +465,34 @@ export class StreamClientScrcpy
                 return;
             }
             const host = container ?? document.querySelector<HTMLElement>('.device-view');
-            if (tries === 2 && host?.isConnected) this.showAudioUnlock(host);
-            if (tries > 24) window.clearInterval(tick);
-        }, 500);
+            if (tries >= 3 && host?.isConnected) this.showAudioUnlock(host);
+        }, 1000);
     }
 
     private showAudioUnlock(container: HTMLElement): void {
         if (this.audioUnlockEl) return;
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.textContent = '🔇 点这里开声音';
+        btn.textContent = '🔇';
+        btn.title = '点一下开声音';
+        btn.setAttribute('aria-label', '点一下开声音');
+        // 只是个 32px 的小圆点，不再横一条红色横幅挡画面
         btn.style.cssText = [
             'position:absolute',
-            'left:50%',
-            'transform:translateX(-50%)',
-            'bottom:calc(18px + env(safe-area-inset-bottom))',
+            'right:calc(8px + env(safe-area-inset-right))',
+            'bottom:calc(78px + env(safe-area-inset-bottom))',
             'z-index:9999',
-            'padding:10px 18px',
-            'border-radius:999px',
+            'width:34px',
+            'height:34px',
+            'padding:0',
+            'border-radius:50%',
             'border:0',
-            'background:#e8453c',
+            'background:rgba(0,0,0,.55)',
             'color:#fff',
             'font-size:15px',
-            'box-shadow:0 6px 18px rgba(0,0,0,.45)',
+            'line-height:34px',
+            'opacity:.8',
+            'box-shadow:0 2px 8px rgba(0,0,0,.4)',
         ].join(';');
         btn.addEventListener('click', (ev) => {
             ev.stopPropagation();
@@ -486,7 +502,7 @@ export class StreamClientScrcpy
                     btn.remove();
                     this.audioUnlockEl = undefined;
                 } else {
-                    btn.textContent = '🔇 仍无声：检查 iPhone 侧边静音开关';
+                    btn.title = '还是没声音：看看 iPhone 侧边静音开关';
                 }
             }, 600);
         });
@@ -595,8 +611,12 @@ export class StreamClientScrcpy
         // （readyState 仍是 OPEN），随后才补一个 1006。清零就等于把那个 1006
         // 认成前台真故障 —— 用户看到的就是冻住一分钟之后报 "code 1006"。
         const hiddenFor = this.pageHiddenAt > 0 ? Date.now() - this.pageHiddenAt : 0;
-        // 浏览器挂后台会把 AudioContext 一起挂起，回来先把它唤醒
-        this.audioPlayer?.resume();
+        // 浏览器挂后台会把 AudioContext 一起挂起，回来先把它唤醒。
+        // iOS 上系统恢复音频会话是异步的，一次 resume 未必接得住 —— 连试几次，
+        // 别一失败就弹红条让用户点。
+        [0, 150, 500, 1200].forEach((delay) => {
+            window.setTimeout(() => void this.audioPlayer?.resume(), delay);
+        });
         this.resumeIfDead(hiddenFor >= StreamClientScrcpy.RESUME_PROACTIVE_AFTER_MS);
     };
 
@@ -682,6 +702,12 @@ export class StreamClientScrcpy
         if (!udid) {
             throw Error(`Invalid udid value: "${udid}"`);
         }
+        // 一页只留一条流：先把上一条掐掉，否则两条流会互相踢掉对方的会话
+        if (StreamClientScrcpy.active && StreamClientScrcpy.active !== this) {
+            console.warn(TAG, 'another stream was still running in this page — stopping it first');
+            StreamClientScrcpy.active.stopStream();
+        }
+        StreamClientScrcpy.active = this;
 
         // Hydrate the per-device cache before any sync video reads below (player
         // ctor read and getFitToScreen call). The hydrateDevice is once-guarded so
@@ -786,6 +812,9 @@ export class StreamClientScrcpy
         // 常驻监听、每次触摸都试一次，已经在跑就直接返回，开销可以忽略。
         const unlockAudio = () => {
             this.userInteracted = true;
+            // 第一次手势时给这页挂一个"在放媒体"的身份（静音循环 <audio>），
+            // 这样切后台再回来 iOS 才肯把音频会话还给我们 —— 不用用户再点。
+            this.audioPlayer?.keepSessionAlive();
             if (this.audioPlayer) void this.audioPlayer.resume();
         };
         document.addEventListener('pointerdown', unlockAudio, { capture: true });
@@ -843,6 +872,7 @@ export class StreamClientScrcpy
         window.removeEventListener('online', this.onNetworkBack);
         this.stopStallWatch();
         this.clearResume();
+        if (StreamClientScrcpy.active === this) StreamClientScrcpy.active = undefined;
         // 用户主动关掉的流不再自动重开
         forgetStreamForResume();
         if (this.stopFn) {

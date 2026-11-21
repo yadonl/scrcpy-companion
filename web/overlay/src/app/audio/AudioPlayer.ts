@@ -2,11 +2,16 @@
 import { PCM_WORKLET_NAME, PCM_WORKLET_SOURCE } from './PcmWorklet';
 import { decodeS16LEToFloat32Planar } from './pcmConvert';
 
+/** 0.1 秒静音（8kHz / 8bit 单声道，844 字节）：只为了让 iOS 认这页"在放媒体" */
+const SILENT_WAV =
+    'data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YSADAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICK';
+
 export class AudioPlayer {
     // Explicit `| undefined` (matching `configData` below) because
     // `exactOptionalPropertyTypes` is on: stop() clears these back to
     // undefined, which a bare `?:` optional does not permit.
     private audioContext?: AudioContext | undefined;
+    private silence?: HTMLAudioElement | undefined;
     private decoder?: AudioDecoder | undefined;
     private workletNode?: AudioWorkletNode | undefined;
     private gainNode?: GainNode | undefined;
@@ -153,10 +158,47 @@ export class AudioPlayer {
         );
     }
 
+    /**
+     * 该不该 resume。
+     *
+     * Safari（iOS/iPadOS）后台回来给的是 `'interrupted'`，不是 Chrome 那套
+     * `'suspended'`。只认 suspended 的话切回来根本不会调 resume —— 用户看到的
+     * 就是"声音没了、还弹个红条要我点"。这里两种都接。
+     */
+    private needsResume(): boolean {
+        const state = this.audioContext?.state as string | undefined;
+        return state === 'suspended' || state === 'interrupted';
+    }
+
     async resume(): Promise<void> {
-        if (this.audioContext?.state === 'suspended') {
-            await this.audioContext.resume();
+        if (!this.needsResume()) return;
+        try {
+            await this.audioContext!.resume();
+        } catch (err) {
+            // 系统还没把音频会话还回来时 resume 会 reject，等下一次重试即可
+            console.warn('[AudioPlayer] resume failed:', (err as Error)?.message);
         }
+    }
+
+    /**
+     * 静音循环的 <audio>：给 iOS 一个「这页在放媒体」的身份。
+     *
+     * 有这个身份，切后台再回来系统才愿意把音频会话还给我们；纯 WebAudio
+     * 的页面后台一挂就被判定成"没在放东西"。必须在用户手势里调用一次。
+     */
+    keepSessionAlive(): void {
+        if (this.silence) return;
+        const audio = new Audio(SILENT_WAV);
+        audio.loop = true;
+        audio.volume = 0.01;
+        audio.setAttribute('playsinline', '');
+        audio.setAttribute('aria-hidden', 'true');
+        void audio.play().catch(() => {
+            /* 没手势时 play 会被拒，下次手势会再调一次 */
+        });
+        // 排障抓手：控制台里看 __xAudioKeeper.paused 就知道音频会话还在不在
+        (globalThis as unknown as { __xAudioKeeper?: HTMLAudioElement }).__xAudioKeeper = audio;
+        this.silence = audio;
     }
 
     /** 供 UI 判断是否需要提示用户「点一下开声音」 */
@@ -190,6 +232,8 @@ export class AudioPlayer {
         }
         this.workletNode?.disconnect();
         this.gainNode?.disconnect();
+        this.silence?.pause();
+        this.silence = undefined;
         if (this.audioContext && this.audioContext.state !== 'closed') {
             this.audioContext.close().catch(() => {
                 // Already closed elsewhere — nothing to do, and an unhandled
