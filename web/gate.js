@@ -160,6 +160,29 @@ function pickDevice(tries, cb) {
   });
 }
 
+// Muting the phone before the stream closes: the scrcpy session keeps the
+// phone silent, but the moment it exits the speaker comes back (and whatever
+// was playing leaks out of the phone instead of the page). Two steps:
+//   1. mute  — keyevent 164 is a TOGGLE, so check Muted first (already muted
+//              means pressing it again would turn sound back ON)
+//   2. pause — kill the source too; a restored audio route then has nothing
+//              to play. dispatch pause is used instead of keyevent 85 because
+//              85 is also a toggle and would START playback when idle.
+const MUTE_CMD =
+  "m=$(dumpsys audio 2>/dev/null | grep -A1 '^- STREAM_MUSIC:' | grep -m1 'Muted:' | awk '{print $2}'); " +
+  "[ \"$m\" != \"true\" ] && input keyevent 164; " +
+  "cmd media_session dispatch pause >/dev/null 2>&1; echo done";
+
+function handleMute(res) {
+  pickDevice(2, (err, serial) => {
+    if (err) return jsonOut(res, 503, { ok: false, error: err.message });
+    execFile(ADB_BIN, ['-s', serial, 'shell', MUTE_CMD], { timeout: 8000 }, (e2, out2, serr) => {
+      if (e2) return jsonOut(res, 500, { ok: false, error: String(serr || e2.message).slice(0, 200) });
+      jsonOut(res, 200, { ok: true });
+    });
+  });
+}
+
 function handleScreenshot(res) {
   pickDevice(3, (err, serial) => {
     if (err) return jsonOut(res, 503, { ok: false, error: err.message });
@@ -200,6 +223,11 @@ async function handle(req, res) {
       return res.end(LOGIN);
     }
 
+    // Silence the phone before the page lets the stream go (the page beacons
+    // this on pagehide, and a closing toolbar button calls it first).
+    if (req.method === 'POST' && u.pathname === '/x/mute') {
+      return handleMute(res);
+    }
     // Screenshot goes to the phone's gallery, not to the page (the page has no
     // scrcpy control channel to trigger the device-side capture).
     if (req.method === 'POST' && u.pathname === '/x/screenshot') {

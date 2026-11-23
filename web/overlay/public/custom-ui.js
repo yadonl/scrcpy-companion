@@ -495,11 +495,16 @@
             var k = b.getAttribute('data-x');
             if (k === 'full') applyFull(!root.classList.contains('x-full'));
             if (k === 'side') applySide(!root.classList.contains('x-side'));
-            if (k === 'close') { applySide(false); closeModal(); }
+            if (k === 'close') {
+                applySide(false);
+                mutePhone();                    // 先让手机闭嘴，再断会话
+                setTimeout(closeModal, 400);    // 留出 adb 那一下的落地时间
+            }
         }, true);
         cw.addEventListener('touchstart', function (ev) {
             if (ev.target.closest('.x-tool')) ev.stopPropagation();
         }, { passive: true });
+        hookMuteOnExit();
 
         /* ── 事件隔离（2026-11-23 主人 iPhone 上「点工具没反应」的根治）──────
          * ws-scrcpy 的 InteractionHandler 把触摸监听挂在 document.body 冒泡阶段
@@ -552,6 +557,29 @@
                 done();
             })
             .catch(function (e) { toast('截图失败：' + e.message); done(); });
+    }
+
+    /* 关投屏之前先让手机静音。
+     * 手机端的 xy_audio2.sh 是 1 秒一轮，靠「scrcpy 会话还在不在」判断，
+     * 所以断开那一下必然漏出声音（主人：还是会响一秒）。
+     * 这里在断开之前先打一枪 /x/mute（gate 里直接 adb 静音），比轮询快。 */
+    function mutePhone() {
+        try {
+            if (navigator.sendBeacon) navigator.sendBeacon('/x/mute');
+            else fetch('/x/mute', { method: 'POST', keepalive: true });
+        } catch (e) {}
+    }
+
+    /* 关页面 / 切到后台 / 退出浏览器 都要先静音，不然抖音还在外放 */
+    function hookMuteOnExit() {
+        if (window.__xMuteHooked) return;
+        window.__xMuteHooked = true;
+        var fire = function () { mutePhone(); };
+        window.addEventListener('pagehide', fire);
+        window.addEventListener('beforeunload', fire);
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'hidden') fire();
+        });
     }
 
     function hookShot(cw) {
