@@ -223,6 +223,13 @@ async function handle(req, res) {
       return res.end(LOGIN);
     }
 
+    // Incompressible payload so the client can time its own downlink.
+    if (req.method === 'GET' && u.pathname === '/x/speedtest') {
+      const mb = Math.max(1, Math.min(parseInt(u.searchParams.get('mb') || '3', 10) || 3, 16));
+      const buf = require('crypto').randomBytes(mb * 1024 * 1024);
+      res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': buf.length, 'cache-control': 'no-store' });
+      return res.end(buf);
+    }
     // Silence the phone before the page lets the stream go (the page beacons
     // this on pagehide, and a closing toolbar button calls it first).
     if (req.method === 'POST' && u.pathname === '/x/mute') {
@@ -262,11 +269,48 @@ const server = https.createServer(
 process.on('uncaughtException', (e) => console.error('gate: uncaught:', e && e.stack || e));
 process.on('unhandledRejection', (e) => console.error('gate: unhandled rejection:', e && e.stack || e));
 
+// ── Bandwidth-aware stream profile ────────────────────────────────────────
+// Capture happens on the phone side, so the bottleneck is the DOWNLINK to the
+// viewer: a desk PC on Tailscale relay, a phone on 4G and a laptop on gigabit
+// LAN need very different bitrates. The page measures its own downlink
+// (GET /x/speedtest, incompressible random bytes) and stores the result in the
+// x_mbps cookie; here we turn that into scrcpy stream parameters.
+function getCookie(req, name) {
+  const raw = req.headers.cookie || '';
+  for (const part of raw.split(';')) {
+    const i = part.indexOf('=');
+    if (i < 0) continue;
+    if (part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return '';
+}
+
+function profileFor(req) {
+  const mbps = parseInt(getCookie(req, 'x_mbps') || '0', 10);
+  if (!mbps || mbps <= 0) return null;
+  if (mbps >= 50) return { maxSize: 2400, bitrate: 12000000, maxFps: 60 };
+  if (mbps >= 20) return { maxSize: 1920, bitrate: 8000000, maxFps: 60 };
+  if (mbps >= 8) return { maxSize: 1600, bitrate: 5000000, maxFps: 60 };
+  if (mbps >= 3) return { maxSize: 1280, bitrate: 3000000, maxFps: 30 };
+  return { maxSize: 960, bitrate: 1500000, maxFps: 30 };
+}
+
+function injectProfile(url, req) {
+  if (url.indexOf('action=stream') === -1) return url;
+  const p = profileFor(req);
+  if (!p) return url;
+  const u = new URL(url, 'https://gate.invalid');
+  u.searchParams.set('maxSize', String(p.maxSize));
+  u.searchParams.set('bitrate', String(p.bitrate));
+  u.searchParams.set('maxFps', String(p.maxFps));
+  return u.pathname + (u.search || '');
+}
+
 // WebSocket (and any Upgrade) passthrough: raw socket piping, token checked once
 server.on('upgrade', (req, socket, head) => {
   if (!ok(req)) { socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); return socket.destroy(); }
   const up = net.connect(TPORT, tHost, () => {
-    const lines = [`${req.method} ${req.url} HTTP/1.1`];
+    const lines = [`${req.method} ${injectProfile(req.url, req)} HTTP/1.1`];
     for (const [k, v] of Object.entries(req.headers)) lines.push(`${k}: ${v}`);
     up.write(lines.join('\r\n') + '\r\n\r\n');
     if (head && head.length) up.write(head);

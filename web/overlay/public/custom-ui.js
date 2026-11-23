@@ -505,6 +505,7 @@
             if (ev.target.closest('.x-tool')) ev.stopPropagation();
         }, { passive: true });
         hookMuteOnExit();
+        setTimeout(measureDownlink, 400);
 
         /* ── 事件隔离（2026-11-23 主人 iPhone 上「点工具没反应」的根治）──────
          * ws-scrcpy 的 InteractionHandler 把触摸监听挂在 document.body 冒泡阶段
@@ -580,6 +581,27 @@
         document.addEventListener('visibilitychange', function () {
             if (document.visibilityState === 'hidden') fire();
         });
+    }
+
+    /* 开页面时测一次到 NAS 的下行带宽，结果写 x_mbps cookie。
+     * 采集中在手机→NAS（内网/USB，不是瓶颈），画面是 NAS→客户端 ——
+     * 所以按「客户端下行」选档才对得上办公网、Tailscale、4G 这些差别。
+     * gate（lan_https.js 的 profileFor）在转发 action=stream 时按 cookie 改写
+     * maxSize / bitrate / maxFps，这里只管测。 */
+    function measureDownlink() {
+        if (window.__xSpeedDone) return;
+        window.__xSpeedDone = true;
+        var t0 = (window.performance && performance.now) ? performance.now() : Date.now();
+        fetch('/x/speedtest?mb=3&t=' + Date.now(), { cache: 'no-store' })
+            .then(function (r) { return r.arrayBuffer(); })
+            .then(function (b) {
+                var now = (window.performance && performance.now) ? performance.now() : Date.now();
+                var sec = (now - t0) / 1000;
+                var mbps = Math.round((b.byteLength * 8 / 1e6) / Math.max(sec, 0.05));
+                document.cookie = 'x_' + 'mbps' + '=' + mbps + '; path=/; max-age=3600';
+                try { console.log('[x] 下行实测 ' + mbps + ' Mbps'); } catch (e) {}
+            })
+            .catch(function () { window.__xSpeedDone = false; });
     }
 
     function hookShot(cw) {
@@ -696,4 +718,26 @@
       'buf  ' + (buf === undefined ? '-' : buf + 'ms') + '   断粮 ' + (under === undefined ? '-' : under) + '\n' +
       'keeper ' + (keeper ? (keeper.paused ? '暂停' : '在放') : '无');
   }, 500);
+})();
+
+/* 下行带宽自测：页面一加载就跑（不等打开设备）。
+ * 采集中在手机→NAS（内网/USB，不是瓶颈），画面是 NAS→客户端；
+ * 按客户端下行选档才跟得上办公网 / Tailscale / 4G 的差别。
+ * 结果写 x_mbps cookie，gate（lan_https.js 的 profileFor）转发 action=stream
+ * 时按它改写 maxSize / bitrate / maxFps。 */
+(function () {
+  if (window.__xSpeedProbe) return;
+  window.__xSpeedProbe = true;
+  var t0 = (window.performance && performance.now) ? performance.now() : Date.now();
+  fetch('/x/speedtest?mb=3&t=' + Date.now(), { cache: 'no-store' })
+    .then(function (r) { return r.arrayBuffer(); })
+    .then(function (buf) {
+      var now = (window.performance && performance.now) ? performance.now() : Date.now();
+      var sec = Math.max((now - t0) / 1000, 0.05);
+      var mbps = Math.round((buf.byteLength * 8 / 1e6) / sec);
+      document.cookie = 'x_' + 'mbps' + '=' + mbps + '; path=/; max-age=3600';
+      window.__xMbps = mbps;
+      try { console.log('[x] 下行实测 ' + mbps + ' Mbps'); } catch (e) {}
+    })
+    .catch(function () { window.__xSpeedProbe = false; });
 })();
