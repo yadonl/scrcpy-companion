@@ -192,6 +192,17 @@ function ensureShell(serial) {
   return shellProc;
 }
 
+// On mobile data the stream drops and reconnects repeatedly; muting on every
+// close makes the phone flip mute/unmute and the volume bar dance. Only honour
+// one mute per 8s window from the WebSocket path (explicit page requests skip this).
+let lastWsMuteAt = 0;
+function shouldMuteNow() {
+  const now = Date.now();
+  if (now - lastWsMuteAt < 8000) return false;
+  lastWsMuteAt = now;
+  return true;
+}
+
 function runShellOrFallback(serial, cmd) {
   try {
     ensureShell(serial).stdin.write(cmd + '\n');
@@ -342,6 +353,21 @@ server.on('upgrade', (req, socket, head) => {
     up.pipe(socket);
     socket.pipe(up);
   });
+  // Closing the stream must silence the phone: the scrcpy session is what keeps
+  // the speaker quiet, so the moment it ends whatever was playing leaks out.
+  // Connections younger than 15s are page loads, not real streams — ignore them.
+  const startedAt = Date.now();
+  let gone = false;
+  const onGone = () => {
+    if (gone) return;
+    gone = true;
+    if (!req.url.includes('action=stream')) return;
+    if (Date.now() - startedAt < 15000) return;
+    if (!shouldMuteNow()) return;
+    pickDevice(2, (err, serial) => { if (!err) runShellOrFallback(serial, MUTE_CMD); });
+  };
+  up.on('close', onGone);
+  socket.on('close', onGone);
   up.on('error', () => socket.destroy());
   socket.on('error', () => up.destroy());
 });

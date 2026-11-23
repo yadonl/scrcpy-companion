@@ -498,7 +498,9 @@
             if (k === 'close') {
                 applySide(false);
                 mutePhone();                    // 先让手机闭嘴，再断会话
-                setTimeout(closeModal, 400);    // 留出 adb 那一下的落地时间
+                // 700ms 而不是 400：手机在外面走 4G 时，sendBeacon 那一趟往返 + adb 落地
+                // 比内网慢得多，留够冗余才不至于「关了页面手机还在放」。
+                setTimeout(closeModal, 700);
             }
         }, true);
         cw.addEventListener('touchstart', function (ev) {
