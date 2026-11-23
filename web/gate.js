@@ -359,9 +359,13 @@ function injectProfile(url, req) {
    * hardware decode and better quality, so iOS is left alone.
    * Note: h264 is ws-scrcpy's default, so the front-end ignores the param and
    * falls back to it — which is exactly what we want. */
-  const ua = String((req.headers && req.headers['user-agent']) || '');
-  const isApple = /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && /Mobile/i.test(ua));
-  if (!isApple) u.searchParams.set('videoCodec', 'h264');
+  /* Pin H.264 for everyone, Apple included.
+   * The original reasoning was "iPhone decodes HEVC in hardware, so it looks better
+   * at the same bitrate" — measurement disproved it: on the owner's iPhone a
+   * 1072x2400 @11.4MiB/s H.265 stream was unreadably blurry, and switching to H.264
+   * fixed it instantly. Safari's WebCodecs HEVC path is poor quality even when it
+   * reports hardware support. H.264 has the widest hardware decode coverage. */
+  u.searchParams.set('videoCodec', 'h264');
   return u.pathname + (u.search || '');
 }
 
