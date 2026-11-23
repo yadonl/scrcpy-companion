@@ -466,3 +466,13 @@ html.x-touch dialog.connect-modal .device-view,
 html.x-touch body {
     background: #000 !important;
 }
+
+/* ── 用不到的按钮直接藏掉 ──────────────────────────────────────────
+ * 主人 2026-11-23 定的：触摸/方向键模式、UHID 键鼠、两个剪贴板搬运都不要。
+ * 按 title 匹配（原生 ws-scrcpy 的英文标题），没删 DOM，想找回把这段注释掉即可。 */
+.control-buttons-list .control-button[title^="Touch mode"],
+.control-buttons-list .control-button[title^="UHID Input"],
+.control-buttons-list .control-button[title^="copy device selection"],
+.control-buttons-list .control-button[title^="push host clipboard"] {
+    display: none !important;
+}

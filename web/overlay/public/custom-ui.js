@@ -540,7 +540,9 @@
             takeShot(b);
         }, true);
         b.addEventListener('touchstart', function (ev) { ev.stopPropagation(); }, { passive: true });
-        orig.parentNode.insertBefore(b, orig.nextSibling);
+        /* 截图排到最上面第 4 个（全屏/菜单/关闭之后），不用滚到底找 */
+        var anchor = cw.children[3];
+        if (anchor) cw.insertBefore(b, anchor); else orig.parentNode.insertBefore(b, orig.nextSibling);
     }
 
     function buildEdge(dlg) {
