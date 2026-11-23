@@ -50,7 +50,7 @@ cd web && ./run.sh setup && ./run.sh start && ./run.sh url
 - **HTTPS + token gate included**: Safari only exposes WebCodecs in a secure context (plain HTTP gives you a device list and a black canvas); the gate owns `:9443` and ws-scrcpy itself binds `127.0.0.1`, so the LAN has no second way in
 - Latency is whatever your Wi-Fi and the phone encoder do — nothing is relayed
 - **No VPN when you are out**: reverse-proxy `:9443` to the internet and sign a real certificate for your own domain (a Let's Encrypt wildcard is enough) — phones and laptops just open it, green padlock included. No public IP at home? Tailscale as a fallback, still nothing to install on the client
-- Add the optional [mirror overlay](web/overlay/README.md): on desktop the window is exactly *picture + toolbar* pinned top-left; on the phone it fills the screen and clears the iPhone safe-area corners; a landscape game rotates 90° to fill the phone (the toolbar becomes a bottom drawer) while desktop parks the toolbar under the picture; **screenshots land in the phone's own gallery**
+- Add the optional [mirror overlay](web/overlay/README.md): on desktop the window is exactly *picture + toolbar* pinned top-left; on the phone it fills the screen and clears the iPhone safe-area corners; a landscape game rotates 90° to fill the phone (the toolbar moves to the game's bottom edge, i.e. the left side of the phone, with upright icons in a slide-out drawer) while desktop parks the toolbar under the picture; **screenshots land in the phone's own gallery**
 - Details: [web/README.md](web/README.md), [docs/web-access.md](docs/web-access.md)
 
 ### 2) Windows / Mac desktop — persistent scrcpy + a floating control bar (the main part of this repo)
@@ -116,7 +116,7 @@ powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\ScrcpyCompanion\bin\
 
 **iPhone / iPad path**: `cd web && ./run.sh setup && ./run.sh start`, then open the `https://<lan-ip>:9443/` it prints. See [web/README.md](web/README.md).
 
-**Optional polish**: `web/overlay/` contains the fixes that turn this from "it works" into "usable every day" — fullscreen PWA (no address bar), audio that stays in sync (the worklet queue was unbounded and drifted 2s), silent reconnect after iOS kills the background WebSocket, forced max bitrate, a desktop layout that is exactly *picture + toolbar*, iPhone safe areas respected, a landscape game rotated 90° to fill the phone screen with the toolbar as a bottom drawer that slides up, and desktop keeping the toolbar under the picture. Apply with `./web/overlay/apply.sh ./web/ws-scrcpy` then `npm run build`. Baseline: `bilbospocketses/ws-scrcpy-web` v0.5.13. Details: [web/overlay/README.md](web/overlay/README.md).
+**Optional polish**: `web/overlay/` contains the fixes that turn this from "it works" into "usable every day" — fullscreen PWA (no address bar), audio that stays in sync (the worklet queue was unbounded and drifted 2s), silent reconnect after iOS kills the background WebSocket, forced max bitrate, a desktop layout that is exactly *picture + toolbar*, iPhone safe areas respected, a landscape game rotated 90° to fill the phone screen, with the toolbar on the game's own bottom edge — the left side of the phone — icons upright, sliding out as a drawer, and desktop keeping the toolbar under the picture. Apply with `./web/overlay/apply.sh ./web/ws-scrcpy` then `npm run build`. Baseline: `bilbospocketses/ws-scrcpy-web` v0.5.13. Details: [web/overlay/README.md](web/overlay/README.md).
 
 ## Configuration
 
