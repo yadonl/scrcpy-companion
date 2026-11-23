@@ -513,6 +513,68 @@
         var qBtn = mkQuality();
         cw.insertBefore(qBtn, cw.firstChild);
 
+        /* 画质菜单：点按钮弹四项，选一次就只重连一次（原来是循环点，每点一下关一次太烦）。
+         * A 和 2.4K 在内网看起来一样（都 2400/12M/60），差别在外网：
+         * A 会按实测下行自动降到 1920/1600，2.4K 是强制原生 —— 网慢也认，要的就是最清晰。 */
+        var QITEMS = [
+            { v: 0,    label: 'A',    note: '按网速自动' },
+            { v: 1280, label: '1.2K', note: '挂机省电' },
+            { v: 1600, label: '1.6K', note: '电脑看' },
+            { v: 2400, label: '2.4K', note: '最清晰' }
+        ];
+        var qMenu = null;
+        function closeQMenu() {
+            if (qMenu && qMenu.parentNode) qMenu.parentNode.removeChild(qMenu);
+            qMenu = null;
+        }
+        function applyQuality(v) {
+            closeQMenu();
+            if (v === qNow()) return;
+            if (v === 0) {
+                document.cookie = 'x_' + 'quality' + '=; path=/; max-age=0';
+            } else {
+                document.cookie = 'x_' + 'quality=' + v + '; path=/; max-age=2592000';
+            }
+            var lab = qBtn.querySelector('.x-q-label');
+            if (lab) lab.textContent = qLabel(v);
+            // 档位是起流时定死的，改完必须重开一路会话才生效（只重连这一次）
+            applySide(false);
+            mutePhone();
+            setTimeout(function () {
+                closeModal();
+                setTimeout(function () {
+                    var link = document.querySelector('a.link-stream');
+                    if (link) link.click();
+                }, 900);
+            }, 400);
+        }
+        function openQMenu() {
+            if (qMenu) { closeQMenu(); return; }
+            var cur = qNow();
+            var m = document.createElement('div');
+            m.className = 'x-qmenu';
+            m.setAttribute('data-x-guard', '1');
+            QITEMS.forEach(function (it) {
+                var b = document.createElement('button');
+                b.className = 'x-qitem' + (it.v === cur ? ' x-qon' : '');
+                b.setAttribute('data-v', String(it.v));
+                b.innerHTML = '<b>' + it.label + '</b><i>' + it.note + '</i>';
+                b.addEventListener('click', function (ev) {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    applyQuality(it.v);
+                }, false);
+                m.appendChild(b);
+            });
+            var host = document.querySelector('.device-view') || document.body;
+            host.appendChild(m);
+            qMenu = m;
+            // 点菜单以外的任何地方收起（延后一拍，别被这次点击立刻关掉）
+            setTimeout(function () {
+                document.addEventListener('click', closeQMenu, { once: true });
+            }, 0);
+        }
+
         cw.addEventListener('click', function (ev) {
             var b = ev.target.closest('.x-tool');
             if (!b) return;
@@ -522,25 +584,7 @@
             if (k === 'full') applyFull(!root.classList.contains('x-full'));
             if (k === 'side') applySide(!root.classList.contains('x-side'));
             if (k === 'quality') {
-                var cur = qNow();
-                // 循环：A → 1.2K → 1.6K → 2.4K → A（2.4K 之后再点要能回到自动）
-                var next = cur === 0 ? 1280 : (cur === 1280 ? 1600 : (cur === 1600 ? 2400 : 0));
-                if (next === 0) {
-                    document.cookie = 'x_' + 'quality' + '=; path=/; max-age=0';
-                } else {
-                    document.cookie = 'x_' + 'quality=' + next + '; path=/; max-age=2592000';
-                }
-                qBtn.querySelector('.x-q-label').textContent = qLabel(next);
-                // 档位是起流时定死的，改完必须重开一路会话才生效
-                applySide(false);
-                mutePhone();
-                setTimeout(function () {
-                    closeModal();
-                    setTimeout(function () {
-                        var link = document.querySelector('a.link-stream');
-                        if (link) link.click();
-                    }, 900);
-                }, 400);
+                openQMenu();
                 return;
             }
             if (k === 'close') {

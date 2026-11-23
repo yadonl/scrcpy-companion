@@ -317,6 +317,51 @@ html.x-land dialog.connect-modal .control-buttons-list .x-tool[data-x="full"] {
  * svg 设 block，否则 inline 元素会差 1px 高。 */
 /* 画质档按钮用文字（1.2K/1.6K/2.4K）而不是图标：三个档位图形表达不出来。
  * 字号跟着按钮走，横屏 rotate(90deg) 时字也跟着转，跟其它图标一致朝上。 */
+/* 画质菜单浮层：竖屏贴工具栏左边（工具栏在右），横屏贴右边（工具栏在左） */
+.x-qmenu {
+    position: fixed;
+    z-index: 60;
+    right: 62px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px;
+    border-radius: 12px;
+    background: rgba(18, 18, 20, .94);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .5);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+}
+html.x-rot .x-qmenu { right: auto; left: 62px; }
+.x-qmenu .x-qitem {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    padding: 7px 16px 7px 12px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #eaeaea;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.x-qmenu .x-qitem b {
+    font: 600 13px/1.3 ui-sans-serif, system-ui, -apple-system, "PingFang SC", sans-serif;
+    letter-spacing: .2px;
+}
+.x-qmenu .x-qitem i {
+    font: 400 11px/1.3 ui-sans-serif, system-ui, -apple-system, "PingFang SC", sans-serif;
+    font-style: normal;
+    opacity: .55;
+}
+.x-qmenu .x-qitem.x-qon { background: rgba(255, 255, 255, .13); }
+.x-qmenu .x-qitem:active { background: rgba(255, 255, 255, .2); }
+
 .control-buttons-list .x-tool .x-q-label {
     display: block;
     font: 600 11px/1.2 ui-sans-serif, system-ui, -apple-system, "PingFang SC", sans-serif;
