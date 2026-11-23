@@ -35,6 +35,7 @@ cd web && ./run.sh setup && ./run.sh start && ./run.sh url
 - No profile, no jailbreak, no third-party app
 - **HTTPS + token gate included**: Safari only exposes WebCodecs in a secure context (plain HTTP gives you a device list and a black canvas); the gate owns `:9443` and ws-scrcpy itself binds `127.0.0.1`, so the LAN has no second way in
 - Latency is whatever your Wi-Fi and the phone encoder do — nothing is relayed
+- Add the optional [mirror overlay](web/overlay/README.md): on desktop the window is exactly *picture + toolbar* pinned top-left; on the phone it fills the screen and clears the iPhone safe-area corners; landscape games put the toolbar under the picture; **screenshots land in the phone's own gallery**
 - Details: [web/README.md](web/README.md), [docs/web-access.md](docs/web-access.md)
 
 ### 2) Windows / Mac desktop — persistent scrcpy + a floating control bar (the main part of this repo)

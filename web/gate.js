@@ -8,10 +8,15 @@
  *   HTTPS with a self-signed cert and enforces an access token, so the mirror
  *   never gets exposed to the LAN without one.
  *
- * Zero dependencies: node:https / node:http / node:net / node:crypto only.
+ * Zero npm dependencies: node:https / node:http / node:net / node:crypto / node:child_process.
  *
  *   node gate.js --port 9443 --target 127.0.0.1:8000 \
  *                --cert certs/cert.pem --key certs/key.pem --token <TOKEN>
+ *
+ * Also serves POST /x/screenshot (token required): the mirror page has no
+ * scrcpy control channel, so it cannot trigger the device-side screenshot.
+ * This endpoint runs `adb shell screencap` on this machine instead and drops
+ * the PNG into the phone's gallery. Override ADB_BIN / SHOT_DIR if needed.
  */
 'use strict';
 
@@ -20,6 +25,7 @@ const net = require('net');
 const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
+const { execFile } = require('child_process');
 
 function parseArgs(argv) {
   const out = {};
@@ -37,6 +43,12 @@ const CERT = args.cert || process.env.GATE_CERT;
 const KEY = args.key || process.env.GATE_KEY;
 const TOKEN = args.token || process.env.GATE_TOKEN;
 const COOKIE = 'ar_token';
+
+// Screenshot: the mirror page has no scrcpy control channel, so the built-in
+// screenshot button does nothing. POST /x/screenshot uses adb on this machine
+// instead and drops the PNG into the phone's own gallery.
+const ADB_BIN = process.env.ADB_BIN || 'adb';
+const SHOT_DIR = process.env.SHOT_DIR || '/sdcard/DCIM/Screenshots';
 
 if (!CERT || !KEY || !TOKEN) {
   console.error('need --cert, --key and --token (or GATE_CERT / GATE_KEY / GATE_TOKEN)');
@@ -123,6 +135,45 @@ function readBody(req) {
   });
 }
 
+function jsonOut(res, code, obj) {
+  const body = JSON.stringify(obj);
+  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(body);
+}
+
+function stamp(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '_' +
+         p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+
+// The phone is often busy right after a stream starts, so adb devices can come
+// back empty for a moment: retry a few times instead of reporting "no device".
+function pickDevice(tries, cb) {
+  execFile(ADB_BIN, ['devices'], { timeout: 8000 }, (e, out) => {
+    if (e) return cb(e);
+    const list = String(out).split('\n').map(s => s.trim())
+      .filter(l => /\tdevice$/.test(l)).map(l => l.split('\t')[0]);
+    if (list.length) return cb(null, list[0]);
+    if (tries <= 1) return cb(new Error('no adb device (run: adb connect <phone-ip>:<port>)'));
+    setTimeout(() => pickDevice(tries - 1, cb), 400);
+  });
+}
+
+function handleScreenshot(res) {
+  pickDevice(3, (err, serial) => {
+    if (err) return jsonOut(res, 503, { ok: false, error: err.message });
+    const name = 'xy_' + stamp(new Date()) + '.png';
+    const full = SHOT_DIR + '/' + name;
+    const cmd = 'mkdir -p ' + SHOT_DIR + '; screencap -p ' + full + ';'
+      + ' am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file://' + full;
+    execFile(ADB_BIN, ['-s', serial, 'shell', cmd], { timeout: 25000 }, (e2, out2, serr) => {
+      if (e2) return jsonOut(res, 500, { ok: false, error: String(serr || e2.message).slice(0, 200) });
+      jsonOut(res, 200, { ok: true, path: full, name });
+    });
+  });
+}
+
 async function handle(req, res) {
     const u = new URL(req.url, 'https://local');
 
@@ -147,6 +198,12 @@ async function handle(req, res) {
       }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       return res.end(LOGIN);
+    }
+
+    // Screenshot goes to the phone's gallery, not to the page (the page has no
+    // scrcpy control channel to trigger the device-side capture).
+    if (req.method === 'POST' && u.pathname === '/x/screenshot') {
+      return handleScreenshot(res);
     }
 
     // strip the token from the proxied URL so it does not leak into logs/history

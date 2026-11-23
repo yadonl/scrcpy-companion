@@ -2,20 +2,36 @@
  * 只加样式，不动原逻辑。类挂在 <html> 上：x-full=全屏，x-side=侧栏展开 */
 
 /* ── 全屏 ───────────────────────────────────────────── */
-html.x-full dialog.connect-modal .modal-frame {
-    position: fixed;
-    inset: 0;
-    width: 100vw;
-    height: 100vh;
-    width: 100dvw;
-    height: 100dvh;
-    max-width: none;
-    max-height: none;
-    margin: 0;
-    padding: 0;
-    border-radius: 0;
+/* 全屏只是「藏掉标题栏 + 黑底独占」，盒子仍然跟内容走（宽度 = 画面 + 工具栏）。
+ * 早先这里写死 100vw/100dvh，结果手机 PWA（默认就是全屏）里：
+ *   · 弹窗撑满整屏、画面却按上限算，四周全是黑；
+ *   · canvas 被 height:100dvh 钉死，设备转回竖屏时被横着拉伸；
+ *   · 横屏时工具栏被推到 100dvh 的底边，跑出画面外看不见。
+ * 这三条都出自下列规则，别再改回去。 */
+/* 注意：别给 modal-frame 再套一层 fixed/100vw —— 它和 dialog 自己的固定定位
+ * 叠在一起会让 fit-content 解析成 0 宽。尺寸统一由 JS（fitDialogBox）写死。 */
+html.x-full dialog.connect-modal {
+    inset: 0 auto auto 0 !important;
+    width: fit-content !important;
+    height: fit-content !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
     background: #000;
     z-index: 2147483000;
+}
+
+html.x-full dialog.connect-modal .modal-frame {
+    width: auto !important;
+    height: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    background: transparent;
 }
 
 html.x-full dialog.connect-modal .modal-header {
@@ -23,33 +39,30 @@ html.x-full dialog.connect-modal .modal-header {
 }
 
 html.x-full dialog.connect-modal .modal-body {
-    height: 100vh;
-    height: 100dvh;
+    width: auto;
+    height: auto;
     max-height: none;
     padding: 0;
-    overflow: hidden;
+    overflow: visible;
+    align-items: flex-start;
 }
 
 html.x-full dialog.connect-modal .device-view {
-    width: 100vw;
-    width: 100dvw;
-    height: 100vh;
-    height: 100dvh;
+    width: fit-content !important;
+    height: auto !important;
     padding: 0;
     gap: 0;
     position: relative;
+    box-sizing: content-box !important;
+    align-self: flex-start;
 }
 
 html.x-full dialog.connect-modal .video {
-    width: 100vw;
-    width: 100dvw;
-    height: 100vh;
-    height: 100dvh;
+    width: auto !important;
+    height: auto !important;
     min-height: 0;
-    /* 只给硬件的安全区让位（刘海/底部横条），不再写死 8px/44px —
-       写死会白白吃掉一圈画面，用户看到的就是"点了全屏还是没铺满"。 */
-    padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px);
-    box-sizing: border-box;
+    padding: 0;
+    box-sizing: content-box;
 }
 
 /* 画面自己带一点圆角，和机身弧线呼应，不再“上直下圆” */
@@ -58,23 +71,32 @@ html.x-full dialog.connect-modal canvas.video-layer {
     box-shadow: 0 0 0 1px rgba(255, 255, 255, .06);
 }
 
+/* 尺寸一律交给 pinCanvas 算（按源比例缩放），CSS 只负责别插嘴 */
 html.x-full dialog.connect-modal canvas.video-layer,
 html.x-full dialog.connect-modal .video-layer {
-    /* 为什么不用 height:100%：.video 是 grid 容器，行高 auto → 百分比高度解析成 auto，
-       canvas 就按容器宽度铺满、竖向溢出被裁。用 dvh 直接算死才可控。 */
-    height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
-    height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+    height: auto !important;
     width: auto !important;
-    max-height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
-    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
-    max-width: 100vw !important;
-    max-width: 100dvw !important;
+    max-height: none !important;
+    max-width: none !important;
     display: block !important;
 }
 
-/* ── 侧栏：默认收起，需要时从右侧滑出 ───────────────── */
+html.x-full body {
+    overscroll-behavior: none;
+    background: #000;
+}
+
+/* ── 右侧工具栏：一条到底，贴紧页面右边 ─────────────────
+ * 画面占满整格，工具栏绝对定位压在右边 58px 上；canvas 的可用宽度由
+ * custom-ui.js 的 controlBarWidth() 扣掉这一条，所以不会互相遮。
+ * 只有触屏窄屏（手机）维持「默认藏起来、右边缘划出来」的老手感。 */
 dialog.connect-modal .device-view {
     position: relative;
+    width: 100%;
+}
+
+dialog.connect-modal .video {
+    width: 100%;
 }
 
 dialog.connect-modal .control-buttons-list.control-wrapper {
@@ -83,15 +105,21 @@ dialog.connect-modal .control-buttons-list.control-wrapper {
     top: 0;
     bottom: 0;
     z-index: 40;
-    transform: translateX(103%);
-    transition: transform .22s ease;
+    transform: none;
     background: rgba(18, 18, 20, .94);
     border-radius: 10px 0 0 10px;
     padding-left: 6px;
     overflow-y: auto;
 }
 
-html.x-side dialog.connect-modal .control-buttons-list.control-wrapper {
+/* 触屏设备由 JS 打 html.x-touch（媒体查询在部分内嵌浏览器里不可靠）：
+ * 工具栏平时滑出屏幕，右边缘划一下 / 点 ☰ 才拉出来。 */
+html.x-touch dialog.connect-modal .control-buttons-list.control-wrapper {
+    transform: translateX(220%);
+    transition: transform .22s ease;
+}
+
+html.x-touch.x-side dialog.connect-modal .control-buttons-list.control-wrapper {
     transform: translateX(0);
 }
 
@@ -109,59 +137,225 @@ html.x-side dialog.connect-modal .x-side-backdrop {
     display: block;
 }
 
-/* 宽屏（桌面）保持原样，别把习惯改掉 */
+
+/* 桌面（鼠标）把会话框拉到接近整个页面：右侧工具栏才谈得上"贴页面右边"，
+ * 画面居中、两侧留黑边。手机上保持原来的弹窗/全屏手感。 */
+/* 投屏时页面不滚动：滚动条会让 100vw 和实际可用宽度差一条，工具栏就贴不上边 */
+html.is-streaming,
+html.is-streaming body {
+    overflow: hidden !important;
+    margin: 0 !important;
+}
+
 @media (min-width: 900px) {
-    dialog.connect-modal .control-buttons-list.control-wrapper {
-        position: static;
-        transform: none;
-        background: transparent;
-        border-radius: 0;
-        overflow: visible;
+    /* 宽度 = 画面 + 右工具栏，弹窗靠左：左侧不留黑边，工具栏紧贴画面右边。
+     * padding-right 由 JS（fitDialogWidth）按工具栏实际宽度补，工具栏落在留白里。 */
+    dialog.connect-modal {
+        inset: 0 auto 0 0 !important;
+        width: fit-content !important;
+        max-width: 100vw !important;
+        height: 100vh !important;
+        max-height: none !important;
+        margin: 0 !important;
+        border-radius: 0 !important;
+    }
+
+    dialog.connect-modal .modal-frame {
+        width: auto !important;
+        height: 100% !important;
+        max-width: none !important;
+        max-height: none !important;
+        border-radius: 0 !important;
+    }
+
+    dialog.connect-modal .modal-body {
+        width: auto !important;
+        padding: 0 !important;
+        align-items: flex-start !important;
+    }
+
+    dialog.connect-modal .device-view {
+        width: fit-content !important;
+        box-sizing: content-box !important;
+        align-self: flex-start !important;
+    }
+
+    dialog.connect-modal .video {
+        width: auto !important;
     }
 }
 
-/* ── 悬浮工具条（全屏/侧栏/关闭） ─────────────────────── */
-.x-ui-bar {
+/* ── 触屏（手机/平板）：恢复成满屏 + 工具栏滑出式 ────────────────
+ * 桌面那套「宽度=画面+工具栏、靠左上」只在 x-touch 不存在时启用；
+ * 手机 PWA 上必须整屏，否则画面被挤到左边、尺寸也不对。 */
+html.x-touch dialog.connect-modal {
+    inset: 0 !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    max-height: none !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+}
+
+html.x-touch dialog.connect-modal .modal-frame {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+}
+
+html.x-touch dialog.connect-modal .modal-body {
+    width: 100% !important;
+    height: 100% !important;
+    max-height: none !important;
+    padding: 0 !important;
+    align-items: stretch !important;
+    overflow: hidden;
+}
+
+html.x-touch dialog.connect-modal .device-view {
+    width: 100% !important;
+    height: 100% !important;
+    /* iPhone 的圆角 + home indicator：画面必须让出安全区，否则底部内容被弧边啃掉。
+     * 四个值都走 env()，横屏时左右也有安全区。--x-safe-* 只是方便本地验证时覆盖。 */
+    padding: var(--x-safe-top, env(safe-area-inset-top, 0px))
+             var(--x-safe-right, env(safe-area-inset-right, 0px))
+             var(--x-safe-bottom, env(safe-area-inset-bottom, 0px))
+             var(--x-safe-left, env(safe-area-inset-left, 0px)) !important;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box !important;
+}
+
+html.x-touch dialog.connect-modal .video {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+html.x-touch dialog.connect-modal .control-buttons-list.control-wrapper {
+    top: 0 !important;
+    bottom: 0 !important;
+    right: 0 !important;
+    left: auto !important;
+    width: auto !important;
+    height: auto !important;
+    border-radius: 10px 0 0 10px;
+}
+
+
+/* ── 横屏画面（手机里开横屏游戏）：工具栏横排到画面下方 ──────────
+ * 此时页面「高度 = 画面高 + 工具栏高」，宽度由画面撑开，左右不留黑边。 */
+/* 横屏时弹窗高度 = 画面高 + 工具栏高，不多留一截黑底 */
+html.x-land dialog.connect-modal {
+    height: fit-content !important;
+    max-height: 100vh !important;
+}
+
+html.x-land dialog.connect-modal .modal-frame {
+    height: auto !important;
+}
+
+html.x-land dialog.connect-modal .device-view {
+    padding-right: 0 !important;
+    padding-bottom: 58px !important;   /* 横排工具栏厚度，JS 也认这个数 */
+}
+
+html.x-land dialog.connect-modal .control-buttons-list.control-wrapper {
+    top: auto !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: auto !important;
+    height: 58px !important;
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    padding: 0 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-radius: 10px 10px 0 0;
+}
+
+html.x-land dialog.connect-modal .control-buttons-list .control-button {
+    flex: 0 0 auto;
+    margin: 0 !important;
+    width: 44px !important;
+    height: 44px !important;
+}
+
+html.x-land dialog.connect-modal .control-buttons-list .x-tool[data-x="full"] {
+    border-bottom: 0;
+    border-right: 1px solid rgba(255, 255, 255, .10);
+}
+
+/* ── 我加的三个按钮（全屏 / 收起工具栏 / 关闭），样式跟原生 control-button 一致 ── */
+.control-buttons-list .x-tool {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 描边也要跟原生一致（原生 stroke-width 1），否则同样的 fill 下看着更细；
+ * svg 设 block，否则 inline 元素会差 1px 高。 */
+.control-buttons-list .x-tool svg {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.control-buttons-list .x-tool svg path,
+.control-buttons-list .x-tool svg rect {
+    stroke: none;
+}
+
+.control-buttons-list .x-tool:hover {
+    background: rgba(255, 255, 255, .12);
+}
+
+/* 桌面有鼠标，工具栏常显，「显示/隐藏工具栏」没有意义（只给触屏防挡画面用） */
+html:not(.x-touch) .control-buttons-list .x-tool[data-x="side"] {
+    display: none;
+}
+
+/* 顶部这三个和原生按钮之间拉一条分隔线（用 inset 阴影，不占盒高，
+ * 否则 svg 会被挤成 29px，比原生小 1px） */
+.control-buttons-list .x-tool[data-x="full"] {
+    box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .10);
+}
+
+/* 截图键：点一下打后端 adb，转圈期间半透明 */
+.control-buttons-list .x-shot.x-busy {
+    opacity: .45;
+}
+
+/* 截图结果提示 */
+.x-toast {
     position: fixed;
     left: 50%;
-    transform: translateX(-50%);
-    bottom: 6px;
-    display: flex;
-    gap: 10px;
-    z-index: 2147483600;
+    bottom: 34px;
+    transform: translate(-50%, 10px);
+    padding: 9px 16px;
+    border-radius: 10px;
+    background: rgba(24, 24, 28, .93);
+    color: #f0f0f0;
+    font-size: 13px;
+    line-height: 1.3;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease;
+    z-index: 2147483647;
 }
 
-.x-ui-bar button {
-    width: 30px;
-    height: 30px;
-    border: 0;
-    border-radius: 15px;
-    background: rgba(30, 30, 34, .55);
-    color: #eaeaea;
-    font-size: 14px;
-    line-height: 30px;
-    text-align: center;
-    padding: 0;
-    opacity: .50;
-    transition: opacity .18s ease, background .18s ease;
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
-    touch-action: manipulation;
-}
-
-.x-ui-bar button:active,
-.x-ui-bar button:hover {
+.x-toast.x-toast-show {
     opacity: 1;
-    background: rgba(60, 60, 68, .85);
-}
-
-html.x-full .x-ui-bar {
-    opacity: .50;
-}
-
-html.x-full .x-ui-bar:hover,
-html.x-full .x-ui-bar:active {
-    opacity: 1;
+    transform: translate(-50%, 0);
 }
 
 /* ── 右边缘热区：手指从边上往里划就拉出侧栏 ───────────── */
@@ -185,6 +379,12 @@ html.is-streaming .x-edge-handle {
 
 html.x-side .x-edge-handle {
     display: none;
+}
+
+/* 鼠标/触控板设备（桌面）不需要右边缘热区：它和黑边里的竖排工具条会打架，
+ * 桌面本来就有 ☰ 按钮。 */
+html:not(.x-touch) .x-edge-handle {
+    display: none !important;
 }
 
 /* 全屏时把状态栏让出来一点，避免 iOS 下拉手势误触 */

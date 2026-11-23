@@ -74,14 +74,16 @@ adb devices                  # 状态要是 device
 cd web/ws-scrcpy && npm run build        # 重新构建
 ```
 
-它补的是这七件事（细节和根因见 `web/overlay/README.md`）：
+它补的是这些（细节和根因见 `web/overlay/README.md`）：
 
 - **码率拉满**：服务端原来只会往下压客户端传的码率，现在按机型/入口强制拉满（实测 12M → 20M）
 - **掉线自愈**：手机睡一会儿无线调试就断，开流前自动 `devices → connect → mdns` 三连，不用你再回去点
 - **切后台恢复**：iOS 挂后台会悄悄掐死 WebSocket（`readyState` 还骗你说 `OPEN`），回来后静默重连，不弹错误框
 - **声音**：iOS 手势时机不对导致音频上下文没解锁 → 常驻监听 + 兜底按钮；音频队列原来无上限，积压 2 秒永不消化 → 改成超了就从队头丢，实测延迟 145~185ms
 - **真全屏**：PWA manifest + 图标，加到主屏后没有地址栏；画布按手机真实比例重钉，不再被写死的 padding 挤小
-- **横屏游戏**：手机在跑横屏游戏时，竖着拿 iPhone 也能满屏看——画面自动转 90°，触摸坐标同步反解
+- **两套布局**：电脑上是「宽度 = 画面 + 工具栏」、靠左排，窗口大画面就大、小了等比缩；手机上整屏铺满、工具栏滑出隐藏，并按 `env(safe-area-inset-*)` 让开 iPhone 的圆角和 home indicator
+- **横屏游戏**：电脑上工具栏自动横排到画面正下方、宽度吃满；手机上画面按视口比例居中。**不再自动拧 90°**（要旧行为把 `localStorage.rot` 设 `'1'`，并配 `InteractionHandler` 反解触摸）
+- **截图直接进手机相册**：网页模式没有 scrcpy 控制通道，原生截图键发不出去。补丁把那个键换成 `POST /x/screenshot`，由 `web/gate.js` 用 adb `screencap` 落盘到 `DCIM/Screenshots/` 并通知相册
 - **证书**：`web/overlay/certs/gen.sh` 重签脚本，叶证书 397 天 + `serverAuth`（iOS 只认 ≤825 天）
 
 > 补丁基线是 `bilbospocketses/ws-scrcpy-web` **v0.5.13**。上游 NetrisTV/ws-scrcpy 结构不同，别直接套。
@@ -109,4 +111,5 @@ cd web/ws-scrcpy && npm run build        # 重新构建
 | 画面糊 / 只有 12M | 用了上游原版：服务端只会压码率不会抬，套 `web/overlay/` 补丁 |
 | 声音比画面慢 1~2 秒 | 音频队列积压没上限，套 `web/overlay/` 的 `PcmWorklet`（超限从队头丢） |
 | 切后台回来一直转圈 | iOS 掐死 socket 但 `readyState` 仍报 `OPEN`，需要补丁里的静默自愈 |
-| 横屏游戏在竖屏里只占中间一条 | 套补丁后自动转 90°；若方向反了，改 `custom-ui.js` 里 `rotate(90deg)` 为 `rotate(-90deg)` |
+| 横屏游戏在竖屏里只占中间一条 | 套补丁后桌面端工具栏横排到画面下方；想要「把头歪 90°」的旧行为，`localStorage.rot='1'` |
+| 点截图键没反应 | 网页模式截不了 scrcpy 控制通道的图：套补丁 + `gate.js` 的 `/x/screenshot`（需要本机 `adb` 在 PATH 里，或设 `ADB_BIN`） |

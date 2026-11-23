@@ -9,7 +9,7 @@
 ## 为什么需要它
 
 原生 ws-scrcpy 的默认参数是按「桌面浏览器 + 局域网调试」定的，搬到 iPhone 上当日常入口就不够了。
-下面七件事我在真机上逐个踩过、逐个改掉：
+下面这些我在真机上逐个踩过、逐个改掉：
 
 | 现象 | 真因 | 改在哪 |
 | --- | --- | --- |
@@ -20,8 +20,11 @@
 | 切后台再回来，画面永远转圈 | iOS 会把挂后台的 WebSocket 掐死，但 `readyState` 仍报 `OPEN`；服务端 socket 一 close 就杀 scrcpy-server | `src/app/ScrcpyDemuxer.ts`（`isOpen()` 探活）+ `src/app/googDevice/client/streamDeepLink.ts`（`x-resume-stream`，5 分钟 TTL）+ `StreamClientScrcpy.ts`（最多 3 轮、每轮 10 秒的静默自愈，不弹框） |
 | 没声音；点了屏幕才响一下 | `resumeAudio` 是 `{once:true}` 的 click 监听，用户手势发生在 `AudioPlayer` 创建之前 → 音频上下文永远没解锁 | `StreamClientScrcpy.ts`：常驻捕获阶段 `pointerdown/touchend/keydown` 解锁 + 500ms 轮询兜底，超时给一个「🔇 点这里开声音」按钮 |
 | 声音比画面慢 2 秒 | `PcmWorklet` 的队列**没有上限**，开流瞬间 1~2 秒音频一次性灌进来，之后生产/消费同速，积压永远消化不掉 | `src/app/audio/PcmWorklet.ts`：`MAX_MS=200 / TARGET_MS=90`，超了就**从队头丢**（延迟优先），并每秒回报 `queuedMs` 便于排查 |
-| 画面在新手机上永远不铺满 | 播放器用旧尺寸画新帧；`.video` 写死 `padding: 8px 0 44px`；`pinCanvas()` 写死 `innerHeight-52` | `src/app/player/WebCodecsPlayer.ts`（按 SPS 实际方向 `onSourceResize`）+ `public/custom-ui.js/.css`（全屏只吃 `env(safe-area-inset-*)`） |
-| 手机横屏玩游戏，iPhone 竖着看只剩一条 | 没有旋转层，只能靠用户把手机横过来 | `public/custom-ui.js` 自动转 90° + `src/app/interactionHandler/InteractionHandler.ts` 反解触摸坐标 |
+| 画面在新手机上永远不铺满 / 底部被 iPhone 圆角啃掉 | 播放器用旧尺寸画新帧；`.video` 写死 `padding: 8px 0 44px`；`pinCanvas()` 写死 `innerHeight-52`；全屏规则又把 canvas 钉成 `100dvh` | `src/app/player/WebCodecsPlayer.ts`（按 SPS 实际方向 `onSourceResize`）+ `public/custom-ui.js/.css`：可用尺寸只用「视口 − 标题栏」算，**不量自己撑出来的盒子**；手机端 `viewport-fit=cover` + 四边 `env(safe-area-inset-*)` |
+| 横屏游戏：电脑上工具栏糊在画面里，手机上画面只占中间一条 | 工具栏和画面抢位置；没有按视口比例重算 | `public/custom-ui.js` 的 `x-land`：桌面把工具栏横排到画面**正下方**、弹窗宽=画面+工具栏；手机按视口比例居中。**自动转 90° 默认关闭**（要旧行为把 `localStorage.rot` 设 `'1'`，配合 `InteractionHandler.ts` 的反解） |
+
+| 网页模式按截图键没反应 | 截图走 scrcpy 控制通道，纯网页模式发不出去 | `custom-ui.js` 藏掉原生截图键、换成 `.x-shot` → `POST /x/screenshot` → `web/gate.js` 用 adb `screencap` 直接存进手机相册（带相册扫描，截完就能在相册看到） |
+| 手机和电脑要两套布局 | 桌面要「宽度=画面+工具栏」，手机要整屏 + iPhone 安全区 | `custom-ui.js` 按 `html.x-touch` 分流：触屏判定 `!fine && (coarse \|\| maxTouchPoints>0 \|\| ontouchstart)`（手机 PWA 里 `pointer:coarse` 有时报不出来）；手机满屏 `100vw/100dvh` + 安全区、工具栏滑出；桌面 `fitDialogBox()` 写像素、靠左上 |
 
 ## 还顺带做的几件小事
 
@@ -51,8 +54,8 @@ cd ../ws-scrcpy && npm run build          # 产物在 dist/
 ```
 certs/gen.sh                      重签证书：CA 3650 天 / 叶 397 天 / 带 serverAuth
 certs/leaf.ext                    叶证书扩展（basicConstraints、keyUsage、EKU、SAN）
-public/custom-ui.js               自建 UI 层：全屏、自动转向、侧栏、音频解锁按钮
-public/custom-ui.css              配套样式（safe-area、旋转、遮罩）
+public/custom-ui.js               自建 UI 层：全屏、手机/桌面双布局、横屏横排、三键并入工具栏、截图存相册、侧栏、音频解锁按钮
+public/custom-ui.css              配套样式（safe-area、x-touch/x-land/x-full、遮罩）
 public/index.html                 标题/图标/manifest 引用（资源都带 ?v= 便于破缓存）
 public/manifest.json              真 PWA 清单
 public/icon-{180,192,512}.png     主屏图标
@@ -77,4 +80,5 @@ webpack/ws-scrcpy-web.common.ts   把 public/ 下的 PWA 与 custom-ui 资源纳
 
 - **投屏里看不到 vivo 系统安全键盘**（`com.vivo.secime.service` 的 `SecureInputMethod` 带 `FLAG_SECURE`）。停用该服务能看见，但部分游戏会闪退，所以保持默认。
 - **iOS 后台保活做不到**：不加开发者账号、不越狱的前提下，切后台必断，我们做的是「回来能自愈」，不是「不断」。
-- 旋转只作用于「源是横屏 + 视口是竖屏」这一种组合；竖屏内容（抖音、微信）不会被动旋转。
+- **默认不旋转**：竖屏显示器上看横屏游戏，横着放 + 工具栏在下方才是想要的效果，拧 90° 得歪头看。要旧行为设 `localStorage.rot='1'`。
+- 三键图标用 48 格 viewBox + 纯 `rect`（`stroke:none` + `crispEdges`）：路径描边在 30px 显示时会把直角啃圆。
