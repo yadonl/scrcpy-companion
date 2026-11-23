@@ -371,6 +371,17 @@
 
     function applySide(on) {
         root.classList.toggle('x-side', !!on);
+        if (on) ensureBackdropHost();
+    }
+
+    /* backdrop 必须在 .device-view 里，和工具栏同一父级，z-index 才谈得上比较；
+     * 建的时候 device-view 可能还没挂上，所以每次展开都纠一次位置。 */
+    function ensureBackdropHost() {
+        var dlg = document.querySelector('dialog.connect-modal');
+        if (!dlg) return;
+        var bd = dlg.querySelector('.x-side-backdrop');
+        var dv = dlg.querySelector('.device-view');
+        if (bd && dv && bd.parentElement !== dv) dv.appendChild(bd);
     }
 
     /* 侧栏（右侧工具面板）的关闭逻辑：
@@ -396,6 +407,8 @@
          * 之前挂在 dialog 上，工具栏的 45 只在 device-view 的层叠上下文里生效，
          * 结果遮罩(20) 反而压住工具栏，点什么都先被遮罩吃掉→直接收起。 */
         (dlg.querySelector('.device-view') || dlg).appendChild(b);
+        setTimeout(ensureBackdropHost, 0);
+        setTimeout(ensureBackdropHost, 600);
     }
 
     /* 全屏后尺寸要「盯一会儿」：进流那一刻 .video 可能还是旧盒子，pinCanvas 会把
@@ -487,6 +500,21 @@
         cw.addEventListener('touchstart', function (ev) {
             if (ev.target.closest('.x-tool')) ev.stopPropagation();
         }, { passive: true });
+
+        /* ── 事件隔离（2026-11-23 主人 iPhone 上「点工具没反应」的根治）──────
+         * ws-scrcpy 的 InteractionHandler 把触摸监听挂在 document.body 冒泡阶段
+         * （InteractionHandler.options = {passive:false}，没有 capture），并且会
+         * preventDefault 阻止浏览器合成 click —— 于是点工具栏＝点了画面，按钮永远收不到。
+         * 在工具栏容器上冒泡阶段吞掉事件，Body 就收不到，按钮自己的 click 照常合成。 */
+        if (cw.getAttribute('data-x-guard') !== '1') {
+            cw.setAttribute('data-x-guard', '1');
+            ['pointerdown', 'pointermove', 'pointerup', 'pointercancel',
+             'touchstart', 'touchmove', 'touchend', 'touchcancel',
+             'mousedown', 'mousemove', 'mouseup', 'click', 'dblclick', 'contextmenu'
+            ].forEach(function (t) {
+                cw.addEventListener(t, function (ev) { ev.stopPropagation(); }, false);
+            });
+        }
 
         hookShot(cw);
         return cw;

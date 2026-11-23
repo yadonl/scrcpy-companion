@@ -415,7 +415,7 @@ html.x-touch.x-rot dialog.connect-modal .control-buttons-list.control-wrapper {
     left: 0 !important;
     top: var(--x-safe-top, env(safe-area-inset-top, 0px)) !important;
     bottom: var(--x-safe-bottom, env(safe-area-inset-bottom, 0px)) !important;
-    width: 58px !important;
+    width: 46px !important;
     height: auto !important;
     display: flex !important;
     flex-direction: column !important;
@@ -442,8 +442,8 @@ html.x-touch.x-rot.x-side dialog.connect-modal .control-buttons-list.control-wra
 html.x-touch.x-rot dialog.connect-modal .control-buttons-list .control-button {
     flex: 0 0 auto;
     margin: 0 !important;
-    width: 44px !important;
-    height: 44px !important;
+    width: 36px !important;
+    height: 36px !important;
     transform: rotate(90deg) !important;
     transform-origin: 50% 50% !important;
 }
@@ -486,4 +486,11 @@ html.x-touch body {
 .control-buttons-list .control-button[title^="copy device selection"],
 .control-buttons-list .control-button[title^="push host clipboard"] {
     display: none !important;
+}
+
+/* 触屏按钮：不要长按菜单、不要灰色高亮（iOS 上会让点击看着像没反应） */
+html.x-touch dialog.connect-modal .control-buttons-list .control-button {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    touch-action: manipulation;
 }
