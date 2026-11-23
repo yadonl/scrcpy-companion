@@ -426,13 +426,15 @@ html.x-touch.x-rot.x-side dialog.connect-modal .control-buttons-list.control-wra
     transform: translateX(0) !important;
 }
 
-/* 图标不转，永远朝上 */
+/* 图标朝「画面方向的上」：画面顺时针转了 90°，画面的上在屏幕右侧，
+ * 所以图标也跟着 rotate(90deg)——把手机横过来看时它们才是正的。 */
 html.x-touch.x-rot dialog.connect-modal .control-buttons-list .control-button {
     flex: 0 0 auto;
     margin: 0 !important;
     width: 44px !important;
     height: 44px !important;
-    transform: none !important;
+    transform: rotate(90deg) !important;
+    transform-origin: 50% 50% !important;
 }
 
 /* 拉手跟着换到顶边：做成安全区下方居中的小把手，看得见也点得到。
