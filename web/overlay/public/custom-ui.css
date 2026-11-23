@@ -129,8 +129,19 @@ dialog.connect-modal .x-side-backdrop {
     display: none;
     position: absolute;
     inset: 0;
-    z-index: 39;
+    /* 必须压在工具栏之下：原来是 39，比工具栏高，展开后点什么都先被它吃掉、
+     * 直接当「点画面」收起——主人反馈「点工具就直接收起」。 */
+    z-index: 20;
     background: rgba(0, 0, 0, .18);
+}
+
+/* 工具栏永远在遮罩之上，点哪个用哪个 */
+dialog.connect-modal .control-buttons-list.control-wrapper {
+    z-index: 45;
+}
+
+html.x-touch.x-rot dialog.connect-modal .control-buttons-list.control-wrapper {
+    z-index: 45;
 }
 
 html.x-side dialog.connect-modal .x-side-backdrop {
@@ -419,7 +430,7 @@ html.x-touch.x-rot dialog.connect-modal .control-buttons-list.control-wrapper {
     /* 收起：多挪 6px，边框那 1px 也不许露 */
     transform: translateX(calc(-100% - 6px)) !important;
     transition: transform .22s ease;
-    z-index: 2147483001;
+    z-index: 45;
 }
 
 html.x-touch.x-rot.x-side dialog.connect-modal .control-buttons-list.control-wrapper {

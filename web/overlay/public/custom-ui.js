@@ -392,7 +392,10 @@
         b.addEventListener('touchstart', close, { passive: false });
         b.addEventListener('mousedown', close, true);
         b.addEventListener('click', close, true);
-        dlg.appendChild(b);
+        /* 挂到 .device-view 里（和工具栏同一父级），z-index 才能真的比较：
+         * 之前挂在 dialog 上，工具栏的 45 只在 device-view 的层叠上下文里生效，
+         * 结果遮罩(20) 反而压住工具栏，点什么都先被遮罩吃掉→直接收起。 */
+        (dlg.querySelector('.device-view') || dlg).appendChild(b);
     }
 
     /* 全屏后尺寸要「盯一会儿」：进流那一刻 .video 可能还是旧盒子，pinCanvas 会把
