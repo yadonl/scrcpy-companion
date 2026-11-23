@@ -281,6 +281,7 @@
             c.style.removeProperty('left');
             c.style.removeProperty('position');
         }
+        if (rot !== root.classList.contains('x-rot')) root.classList.toggle('x-rot', rot);
         applyRotate(c, rot);
         fitDialogWidth(dlg);
         fitDialogBox(dlg);
@@ -309,12 +310,17 @@
     }
 
     function rotJustify(bw, bh) {
-        /* 不再自动转 90°：竖屏显示器上开横屏游戏，主人要的就是「横着放 + 工具栏在下面」，
-         * 把画面拧 90° 得歪着头看。要原来的行为就把 localStorage 的 rot 设成 '1'。 */
-        try {
-            if (localStorage.getItem(ROT_KEY) !== '1') return false;
-        } catch (e) { return false; }
-        return bw > bh && window.innerHeight > window.innerWidth;
+        /* 两头的要求不一样，别再一刀切：
+         *   · 手机（x-touch）：横屏内容**转 90°** 铺满竖着拿的屏幕——画面大小跟竖屏时一样，
+         *     只是内容横过来（歪头看）。这就是主人说的「像竖屏一样的画面大小，只不过画面变横」。
+         *   · 桌面：不转，横着放 + 工具栏在下方（他要的是这个）。
+         * localStorage 的 x-ui-rot 可以强制关（'0'）或强制开（'1'）。 */
+        var auto = bw > bh && window.innerHeight > window.innerWidth;
+        var mode = null;
+        try { mode = localStorage.getItem(ROT_KEY); } catch (e) {}
+        if (mode === '0') return false;
+        if (mode === '1') return auto;
+        return root.classList.contains('x-touch') ? auto : false;
     }
 
     /* canvas 的尺寸会被播放器改（分辨率变化、旋转、进出全屏），只靠定时器会漏，
