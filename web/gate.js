@@ -25,7 +25,7 @@ const net = require('net');
 const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 
 function parseArgs(argv) {
   const out = {};
@@ -168,18 +168,43 @@ function pickDevice(tries, cb) {
 //   2. pause — kill the source too; a restored audio route then has nothing
 //              to play. dispatch pause is used instead of keyevent 85 because
 //              85 is also a toggle and would START playback when idle.
+// `--set 0` instead of keyevent 164: 164 is a toggle, so it needs a dumpsys
+// round-trip first to know the current state — that pushed the whole command
+// past 600ms and the phone still audibly leaked. --set 0 is idempotent.
 const MUTE_CMD =
-  "m=$(dumpsys audio 2>/dev/null | grep -A1 '^- STREAM_MUSIC:' | grep -m1 'Muted:' | awk '{print $2}'); " +
-  "[ \"$m\" != \"true\" ] && input keyevent 164; " +
+  "cmd media_session volume --stream 3 --set 0 >/dev/null 2>&1; " +
   "cmd media_session dispatch pause >/dev/null 2>&1; echo done";
+
+// Spawning an adb process per mute costs ~150ms on its own. Keep one shell
+// alive and write commands into its stdin instead (measured 4ms end to end);
+// it is recreated automatically if the phone is unplugged or rebooted.
+let shellProc = null;
+let shellSerial = null;
+function ensureShell(serial) {
+  if (shellProc && shellProc.exitCode === null && shellSerial === serial) return shellProc;
+  if (shellProc && shellProc.exitCode === null) { try { shellProc.kill(); } catch {} }
+  shellSerial = serial;
+  shellProc = spawn(ADB_BIN, ['-s', serial, 'shell'], { stdio: ['pipe', 'pipe', 'pipe'] });
+  shellProc.stdout.on('data', () => {});
+  shellProc.stderr.on('data', () => {});
+  shellProc.on('exit', () => { shellProc = null; });
+  shellProc.on('error', () => { shellProc = null; });
+  return shellProc;
+}
+
+function runShellOrFallback(serial, cmd) {
+  try {
+    ensureShell(serial).stdin.write(cmd + '\n');
+  } catch {
+    execFile(ADB_BIN, ['-s', serial, 'shell', cmd], { timeout: 8000 }, () => {});
+  }
+}
 
 function handleMute(res) {
   pickDevice(2, (err, serial) => {
     if (err) return jsonOut(res, 503, { ok: false, error: err.message });
-    execFile(ADB_BIN, ['-s', serial, 'shell', MUTE_CMD], { timeout: 8000 }, (e2, out2, serr) => {
-      if (e2) return jsonOut(res, 500, { ok: false, error: String(serr || e2.message).slice(0, 200) });
-      jsonOut(res, 200, { ok: true });
-    });
+    runShellOrFallback(serial, MUTE_CMD);
+    jsonOut(res, 200, { ok: true });
   });
 }
 
