@@ -351,6 +351,17 @@ function injectProfile(url, req) {
   u.searchParams.set('maxSize', String(p.maxSize));
   u.searchParams.set('bitrate', String(p.bitrate));
   u.searchParams.set('maxFps', String(p.maxFps));
+  /* Pin non-Apple browsers to H.264.
+   * The front-end's automatic codec choice got stuck on a pre-release bundle
+   * (bundle.js shipped without a cache-busting query), so it picked H.265 — and
+   * MTK's HEVC encoder looks visibly worse at the same bitrate. Reported symptom:
+   * "highest resolution but the picture is a blurry mess". Apple gets HEVC
+   * hardware decode and better quality, so iOS is left alone.
+   * Note: h264 is ws-scrcpy's default, so the front-end ignores the param and
+   * falls back to it — which is exactly what we want. */
+  const ua = String((req.headers && req.headers['user-agent']) || '');
+  const isApple = /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && /Mobile/i.test(ua));
+  if (!isApple) u.searchParams.set('videoCodec', 'h264');
   return u.pathname + (u.search || '');
 }
 
