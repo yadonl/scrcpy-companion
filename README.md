@@ -50,7 +50,7 @@ cd web && ./run.sh setup && ./run.sh start && ./run.sh url
 - **自带 HTTPS + 令牌门**：Safari 只在安全上下文里开 WebCodecs（HTTP 打开会"有设备列表、画面全黑"）；令牌门守着 `:9443`，ws-scrcpy 本体只绑 `127.0.0.1`，局域网里没有第二条路
 - 延迟只取决于你家 Wi-Fi 和手机编码，没有第三方中转
 - **出门不用 VPN**：把 `:9443` 反代到公网、用你自己的域名签一张正规证书（Let's Encrypt 泛域名），手机和电脑浏览器直接打开就是绿锁；家里没有公网 IP 就用 Tailscale 兜底，同样不装任何 App
-- 加上可选的 [投屏增强补丁](web/overlay/README.md)：电脑端「宽度=画面+工具栏」靠左排、手机端整屏并按 iPhone 安全区让开圆角、**手机上看横屏游戏会自动转 90° 铺满**（工具栏变顶部抽屉）、**截图直接存进手机相册**
+- 加上可选的 [投屏增强补丁](web/overlay/README.md)：电脑端「宽度=画面+工具栏」靠左排、手机端整屏并按 iPhone 安全区让开圆角、**手机上看横屏游戏会自动转 90° 铺满**（工具栏改成底部抽屉，从下往上滑出）、**截图直接存进手机相册**
 - 细节与踩坑：[web/README.md](web/README.md)、[docs/web-access.md](docs/web-access.md)
 
 ### 2) Windows / Mac 桌面：scrcpy 常驻 + 悬浮控制条（本仓库主体）

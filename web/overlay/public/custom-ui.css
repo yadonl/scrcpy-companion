@@ -395,11 +395,11 @@ html.x-full body {
 
 /* ── 手机 + 横屏内容（画面已转 90°）→ 工具栏改成「顶部抽屉」 ──────────
  * 竖着拿手机看横屏游戏时，画面占满整屏，右边的竖条工具栏会压在画面上，
- * 所以改成从顶边往下拉的一排，默认收起。 */
+ * 所以改成贴在底边的一排，默认收起、从下面滑出滑入（竖屏仍从右侧滑）。 */
 html.x-touch.x-rot dialog.connect-modal .control-buttons-list.control-wrapper {
-    /* 展开时落在安全区下面，别钻进刘海/状态栏 */
-    top: var(--x-safe-top, env(safe-area-inset-top, 0px)) !important;
-    bottom: auto !important;
+    /* 横屏（画面已转 90°）时工具栏从**下面**滑出滑入，落在安全区之上 */
+    top: auto !important;
+    bottom: var(--x-safe-bottom, env(safe-area-inset-bottom, 0px)) !important;
     left: 0 !important;
     right: 0 !important;
     width: auto !important;
@@ -413,9 +413,9 @@ html.x-touch.x-rot dialog.connect-modal .control-buttons-list.control-wrapper {
     padding: 0 10px;
     overflow-x: auto;
     overflow-y: hidden;
-    border-radius: 0 0 12px 12px;
-    /* 收起：整体挪到安全区上方，连 1px 都不露 */
-    transform: translateY(calc(-100% - var(--x-safe-top, env(safe-area-inset-top, 0px)) - 10px)) !important;
+    border-radius: 12px 12px 0 0;
+    /* 收起：整条挪到安全区下方，连 1px 都不露 */
+    transform: translateY(calc(100% + var(--x-safe-bottom, env(safe-area-inset-bottom, 0px)) + 10px)) !important;
     transition: transform .22s ease;
 }
 
@@ -430,13 +430,33 @@ html.x-touch.x-rot .control-buttons-list .control-button {
     height: 44px !important;
 }
 
-/* 拉手跟着换到顶边 */
+/* 拉手跟着换到顶边：做成安全区下方居中的小把手，看得见也点得到。
+ * 早先写 top:0 全宽，结果被 iPhone 刘海盖住、又留着 translateY(-50%) 只露 11px，
+ * 工具栏一收起就再也拉不出来（主人原话「工具栏去哪了」）。 */
 html.x-touch.x-rot .x-edge-handle {
-    top: 0 !important;
-    bottom: auto !important;
-    left: 0 !important;
-    right: 0 !important;
-    width: auto !important;
-    height: 22px !important;
+    top: auto !important;
+    /* 拉手落在底部安全区的黑边里，不压游戏画面 */
+    bottom: 0 !important;
+    left: 50% !important;
+    right: auto !important;
+    width: 132px !important;
+    height: 24px !important;
+    transform: translateX(-50%) !important;
+    border-radius: 12px 12px 0 0;
+    background: rgba(150, 155, 165, .55);
+    opacity: .85;
     cursor: ns-resize;
+}
+
+html.x-touch.x-rot.x-side .x-edge-handle {
+    opacity: 0;
+}
+
+/* 触屏下背景一律纯黑：用户把「深蓝灰底」看成把画面挡住的一块，纯黑就没有这层误解 */
+html.x-touch dialog.connect-modal,
+html.x-touch dialog.connect-modal .modal-frame,
+html.x-touch dialog.connect-modal .modal-body,
+html.x-touch dialog.connect-modal .device-view,
+html.x-touch body {
+    background: #000 !important;
 }
