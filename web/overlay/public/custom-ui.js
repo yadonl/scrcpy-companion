@@ -482,10 +482,36 @@
             return b;
         }
 
+        /* 画质档按钮：1280 / 1600 / 2400 循环，写 x_quality cookie。
+         * 判断不了「挂机还是投屏」，就交给主人点 —— 选一次记 30 天。 */
+        var QSTEPS = [1280, 1600, 2400];
+        function qNow() {
+            var m = (document.cookie || '').match(/(?:^|; *)x_quality=(\d+)/);
+            var v = m ? parseInt(m[1], 10) : 0;
+            return QSTEPS.indexOf(v) >= 0 ? v : 0;
+        }
+        function qLabel(v) {
+            // 直接查表：1280/1000 四舍五入会变成 "1.3K"，跟实际档位对不上。
+            // 'A' 而不是「自动」：36px 的按钮里两个字挤成一团看不清。
+            if (!v) return 'A';
+            var L = { 1280: '1.2K', 1600: '1.6K', 2400: '2.4K' };
+            return L[v] || 'A';
+        }
+        function mkQuality() {
+            var b = document.createElement('button');
+            b.className = 'control-button x-tool';
+            b.setAttribute('data-x', 'quality');
+            b.setAttribute('title', '画质档位：自动 / 1.2K / 1.6K / 2.4K，点击切换后重连');
+            b.innerHTML = '<span class="x-q-label">' + qLabel(qNow()) + '</span>';
+            return b;
+        }
+
         // 放最上面：不用滚到底才点得到，也不会贴着手机 Dock 误触
         cw.insertBefore(mk('close', '关闭会话'), cw.firstChild);
         cw.insertBefore(mk('side', '显示 / 隐藏工具栏'), cw.firstChild);
         cw.insertBefore(mk('full', '全屏 / 退出全屏'), cw.firstChild);
+        var qBtn = mkQuality();
+        cw.insertBefore(qBtn, cw.firstChild);
 
         cw.addEventListener('click', function (ev) {
             var b = ev.target.closest('.x-tool');
@@ -495,6 +521,28 @@
             var k = b.getAttribute('data-x');
             if (k === 'full') applyFull(!root.classList.contains('x-full'));
             if (k === 'side') applySide(!root.classList.contains('x-side'));
+            if (k === 'quality') {
+                var cur = qNow();
+                // 循环：A → 1.2K → 1.6K → 2.4K → A（2.4K 之后再点要能回到自动）
+                var next = cur === 0 ? 1280 : (cur === 1280 ? 1600 : (cur === 1600 ? 2400 : 0));
+                if (next === 0) {
+                    document.cookie = 'x_' + 'quality' + '=; path=/; max-age=0';
+                } else {
+                    document.cookie = 'x_' + 'quality=' + next + '; path=/; max-age=2592000';
+                }
+                qBtn.querySelector('.x-q-label').textContent = qLabel(next);
+                // 档位是起流时定死的，改完必须重开一路会话才生效
+                applySide(false);
+                mutePhone();
+                setTimeout(function () {
+                    closeModal();
+                    setTimeout(function () {
+                        var link = document.querySelector('a.link-stream');
+                        if (link) link.click();
+                    }, 900);
+                }, 400);
+                return;
+            }
             if (k === 'close') {
                 applySide(false);
                 mutePhone();                    // 先让手机闭嘴，再断会话

@@ -321,7 +321,19 @@ function getCookie(req, name) {
   return '';
 }
 
+// Manual override wins: the toolbar's A / 1.2K / 1.6K / 2.4K button writes
+// x_quality. Covers three real cases — 1280 for idle background play (a fifth of
+// the encoder load), 1600 for desktop viewing (lossless at ~400 CSS px wide),
+// 2400 (native) only for iPhone full-screen, where the Retina panel needs 1:1.
+const QUALITY_TABLE = {
+  1280: { maxSize: 1280, bitrate: 5000000, maxFps: 30 },
+  1600: { maxSize: 1600, bitrate: 8000000, maxFps: 60 },
+  2400: { maxSize: 2400, bitrate: 12000000, maxFps: 60 },
+};
+
 function profileFor(req) {
+  const forced = parseInt(getCookie(req, 'x_quality') || '0', 10);
+  if (QUALITY_TABLE[forced]) return QUALITY_TABLE[forced];
   const mbps = parseInt(getCookie(req, 'x_mbps') || '0', 10);
   if (!mbps || mbps <= 0) return null;
   if (mbps >= 50) return { maxSize: 2400, bitrate: 12000000, maxFps: 60 };

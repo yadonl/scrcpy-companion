@@ -315,6 +315,18 @@ html.x-land dialog.connect-modal .control-buttons-list .x-tool[data-x="full"] {
 
 /* 描边也要跟原生一致（原生 stroke-width 1），否则同样的 fill 下看着更细；
  * svg 设 block，否则 inline 元素会差 1px 高。 */
+/* 画质档按钮用文字（1.2K/1.6K/2.4K）而不是图标：三个档位图形表达不出来。
+ * 字号跟着按钮走，横屏 rotate(90deg) 时字也跟着转，跟其它图标一致朝上。 */
+.control-buttons-list .x-tool .x-q-label {
+    display: block;
+    font: 600 11px/1.2 ui-sans-serif, system-ui, -apple-system, "PingFang SC", sans-serif;
+    letter-spacing: -0.3px;
+    color: inherit;
+    text-align: center;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
 .control-buttons-list .x-tool svg {
     display: block;
     width: 100% !important;
