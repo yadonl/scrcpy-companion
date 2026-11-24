@@ -255,7 +255,11 @@ function handleMute(req, res) {
   const soft = /[?&]soft=1/.test(req.url || '');
   pickDevice(2, (err, serial) => {
     if (err) return jsonOut(res, 503, { ok: false, error: err.message });
-    runShellOrFallback(serial, soft ? MUTE_SOFT : MUTE_CMD);
+    // Always the full mute: the owner's hard rule is "backgrounded or closed must
+    // never make noise". Soft mute (volume only) leaked audio in practice — the
+    // scrcpy teardown briefly re-routes the audio and flushes buffered sound.
+    // Accept "app is paused after reconnect" over "phone talks in the office".
+    runShellOrFallback(serial, MUTE_CMD);
     jsonOut(res, 200, { ok: true });
   });
 }
