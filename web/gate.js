@@ -250,6 +250,11 @@ function runShellOrFallback(serial, cmd) {
 }
 
 function handleMute(req, res) {
+  // Cancel a pending "restore volume" timer first: if the owner closes the session
+  // within 3s of starting it, the timer would otherwise fire after the mute and
+  // make the phone talk again (measured: [x/unmute] fired right after [x/mute] —
+  // only the phone-side script happened to mask it, which is luck, not a fix).
+  if (unmuteTimer) { clearTimeout(unmuteTimer); unmuteTimer = null; }
   // ?soft=1 → the page is being backgrounded/closed, it will come back shortly:
   // mute the volume but do not pause (see MUTE_SOFT).
   const soft = /[?&]soft=1/.test(req.url || '');
