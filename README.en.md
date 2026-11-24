@@ -2,6 +2,8 @@
 
 > **On your LAN it is a direct connection: native resolution, near-zero latency. Away from home you open your own domain in a browser — no VPN, no app.**
 >
+> **Turn an idle Android phone into your own "cloud phone": the phone is yours to command, the data never leaves your house, no third-party server is involved, and you open it in a browser from anywhere.**
+>
 > No app on the iPhone. No emulator on the Mac. The Android phone in your drawer becomes an Android terminal that is **entirely yours** — no account, no cloud, no data leaving the house.
 
 The wall between iOS and Android is not a hardware wall, it is an account wall: to touch Android you are pushed into cloud phones, emulators, second phones and sign-ups, and your data ends up somewhere else.
@@ -14,6 +16,19 @@ This project takes another route: **keep the Android phone at home, reach over f
    │   or Mac     │        (no cloud involved)       │  on charger   │
    └─────────────┘                                   └──────────────┘
 ```
+
+## What this is: a cloud phone that belongs to you
+
+What the industry calls a "cloud phone" is really **renting** an Android: a monthly fee, your data in the vendor's datacenter, the device running on someone else's hardware, and you get a picture with no say over what you install, what stays, or how long it runs.
+
+This project flips it: **the phone is yours, the machine sits in your house, the data never leaves, and nobody charges you rent.**
+
+- **Your phone, your rules** — install what you want, keep what you want, leave it running as long as you want. No vendor limits, no account system, no "unusual login" risk controls.
+- **Data stays local** — the video stream is point-to-point between your own two devices (adb direct), with no third-party server in the path. Pull the internet cable and it still mirrors.
+- **Open it from anywhere** — native resolution and near-zero latency on your LAN; away from home, your own domain with a real certificate opens in a browser. **No app install, no VPN.**
+- **Zero monthly fee** — set it up once, then you only pay for electricity. The Android in your drawer stops being a spare and becomes a **second phone that is always on standby**.
+
+> Being honest: this does not hand you a cloud phone for free. It swaps "the cloud" for the always-on machine you already own — and what you get back is no rent, no accounts, and data that never leaves the house.
 
 ## What it replaces
 
@@ -50,7 +65,7 @@ cd web && ./run.sh setup && ./run.sh start && ./run.sh url
 - **HTTPS + token gate included**: Safari only exposes WebCodecs in a secure context (plain HTTP gives you a device list and a black canvas); the gate owns `:9443` and ws-scrcpy itself binds `127.0.0.1`, so the LAN has no second way in
 - Latency is whatever your Wi-Fi and the phone encoder do — nothing is relayed
 - **No VPN when you are out**: reverse-proxy `:9443` to the internet and sign a real certificate for your own domain (a Let's Encrypt wildcard is enough) — phones and laptops just open it, green padlock included. No public IP at home? Tailscale as a fallback, still nothing to install on the client
-- Add the optional [mirror overlay](web/overlay/README.md): on desktop the window is exactly *picture + toolbar* pinned top-left; on the phone it fills the screen and clears the iPhone safe-area corners; a landscape game rotates 90° to fill the phone (the toolbar moves to the game's bottom edge, i.e. the left side of the phone: a 46px slide-out drawer whose icons rotate with the picture; tapping a tool uses it, tapping the picture closes the drawer) while desktop parks the toolbar under the picture; **screenshots land in the phone's own gallery**
+- Add the optional [mirror overlay](web/overlay/README.md): on desktop the window is exactly *picture + toolbar* pinned top-left; on the phone it fills the screen and clears the iPhone safe-area corners; a landscape game rotates 90° to fill the phone (the toolbar moves to the game's bottom edge, i.e. the left side of the phone: a 46px slide-out drawer whose icons rotate with the picture; tapping a tool uses it, tapping the picture closes the drawer) while desktop parks the toolbar under the picture; **screenshots land in the phone's own gallery**; **the phone goes silent the moment you background the page or close the session**; and four quality presets (auto / 1.2K / 1.6K / 2.4K) so one click matches the screen you are watching on
 - Details: [web/README.md](web/README.md), [docs/web-access.md](docs/web-access.md)
 
 ### 2) Windows / Mac desktop — persistent scrcpy + a floating control bar (the main part of this repo)
