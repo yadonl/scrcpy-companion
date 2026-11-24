@@ -1,4 +1,4 @@
-﻿# Put your idle Android phone inside your Apple ecosystem
+# Put your idle Android phone inside your Apple ecosystem
 
 > **On your LAN it is a direct connection: native resolution, near-zero latency. Away from home you open your own domain in a browser — no VPN, no app.**
 >
