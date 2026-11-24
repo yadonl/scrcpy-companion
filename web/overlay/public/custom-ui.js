@@ -660,12 +660,22 @@
      * 这里在断开之前先打一枪 /x/mute（gate 里直接 adb 静音），比轮询快。 */
     function mutePhone() {
         try {
-            if (navigator.sendBeacon) navigator.sendBeacon('/x/mute');
-            else fetch('/x/mute', { method: 'POST', keepalive: true });
+            // soft=1：切后台/锁屏/切 App 都是临时断开，马上会回来 —— 只压音量，不掐音源。
+            // 掐了音源（dispatch pause）回来就是「画面有了声音没有」，而且抖音这类 App
+            // 只声明 PAUSE/PLAY_PAUSE、不声明 PLAY，任何 play 命令都拉不回来。
+            if (navigator.sendBeacon) navigator.sendBeacon('/x/mute?soft=1');
+            else fetch('/x/mute?soft=1', { method: 'POST', keepalive: true });
         } catch (e) {}
     }
 
-    /* 关页面 / 切到后台 / 退出浏览器 都要先静音，不然抖音还在外放 */
+    /* 关页面 / 切到后台 / 退出浏览器 都要先静音，不然抖音还在外放；
+     * 回到前台再把音量还回去（WS 没断的情况靠这一下，gate 那边是 /x/unmute）。 */
+    function unmutePhone() {
+        try {
+            if (navigator.sendBeacon) navigator.sendBeacon('/x/unmute');
+            else fetch('/x/unmute', { method: 'POST', keepalive: true });
+        } catch (e) {}
+    }
     function hookMuteOnExit() {
         if (window.__xMuteHooked) return;
         window.__xMuteHooked = true;
@@ -674,6 +684,10 @@
         window.addEventListener('beforeunload', fire);
         document.addEventListener('visibilitychange', function () {
             if (document.visibilityState === 'hidden') fire();
+            else if (document.visibilityState === 'visible') {
+                // 只在该页面确实在投屏时才恢复（设备列表页别乱调音量）
+                if (document.querySelector('canvas')) setTimeout(unmutePhone, 800);
+            }
         });
     }
 

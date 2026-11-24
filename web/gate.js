@@ -173,7 +173,45 @@ function pickDevice(tries, cb) {
 // past 600ms and the phone still audibly leaked. --set 0 is idempotent.
 const MUTE_CMD =
   "cmd media_session volume --stream 3 --set 0 >/dev/null 2>&1; " +
-  "cmd media_session dispatch pause >/dev/null 2>&1; echo done";
+  "cmd media_session dispatch pause >/dev/null 2>&1" + STATE_0 + "; echo done";
+
+/* Write the phone-side state file whenever we mute.
+ * xy_audio2.sh uses it to decide whether the volume still needs restoring; if the
+ * gate mutes without touching it, the script thinks "already unmuted" and never
+ * restores — the owner saw exactly that: log silent, no sound, had to raise the
+ * volume by hand. */
+const STATE_0 = "; echo 0 > /data/local/tmp/xy_audio.state 2>/dev/null";
+
+/* Soft mute: volume to 0 only, leave the audio source alone.
+ * Used when the WebSocket drops (phone locked, iPhone backgrounded, 4G hiccup).
+ * Those reconnects are immediate, and pausing the media means the page comes back
+ * with picture but no sound — Douyin only declares PAUSE/PLAY_PAUSE, never PLAY,
+ * so neither dispatch play nor keyevent 85 brings it back.
+ * The full MUTE_CMD (with pause) is only for an explicit "close session". */
+const MUTE_SOFT = "cmd media_session volume --stream 3 --set 0 >/dev/null 2>&1" + STATE_0 + "; echo done";
+
+/* Restore the volume from the gate, not from the phone-side script.
+ * xy_audio2.sh runs in Android's in_active_bg cgroup and gets throttled — its 1s
+ * poll slows down or stalls, which is why "come back from background" had no sound.
+ * The gate holds a persistent adb shell and is not subject to that policy.
+ * Order matters: clear the Muted flag first, then set the volume — on vivo --set
+ * only changes the channel volume, and a lingering Muted flag keeps it silent
+ * (measured: log said "restored to 15" while the phone stayed at 0). */
+const UNMUTE_CMD = "v=$(cat /data/local/tmp/xy_vol 2>/dev/null); "
+  + "case \"$v\" in ''|*[!0-9]*) v=15 ;; esac; "
+  + "if [ \"$v\" -lt 1 ]; then v=15; fi; "
+  + "if [ \"$(dumpsys audio 2>/dev/null | grep -A1 '^- STREAM_MUSIC:' | grep -m1 'Muted:' | awk '{print $2}')\" = 'true' ]; then input keyevent 164; fi; "
+  + "cmd media_session volume --stream 3 --set $v >/dev/null 2>&1; "
+  + "echo 1 > /data/local/tmp/xy_audio.state; echo done";
+
+let unmuteTimer = null;
+function scheduleUnmute() {
+  if (unmuteTimer) clearTimeout(unmuteTimer);
+  unmuteTimer = setTimeout(() => {
+    unmuteTimer = null;
+    quickSerial((err, serial) => { if (!err) runShellOrFallback(serial, UNMUTE_CMD); });
+  }, 3000);
+}
 
 // Spawning an adb process per mute costs ~150ms on its own. Keep one shell
 // alive and write commands into its stdin instead (measured 4ms end to end);
@@ -211,10 +249,23 @@ function runShellOrFallback(serial, cmd) {
   }
 }
 
-function handleMute(res) {
+function handleMute(req, res) {
+  // ?soft=1 → the page is being backgrounded/closed, it will come back shortly:
+  // mute the volume but do not pause (see MUTE_SOFT).
+  const soft = /[?&]soft=1/.test(req.url || '');
   pickDevice(2, (err, serial) => {
     if (err) return jsonOut(res, 503, { ok: false, error: err.message });
-    runShellOrFallback(serial, MUTE_CMD);
+    runShellOrFallback(serial, soft ? MUTE_SOFT : MUTE_CMD);
+    jsonOut(res, 200, { ok: true });
+  });
+}
+
+// Page became visible again: restore the volume (handles the case where the
+// WebSocket never dropped, so no new stream request fires scheduleUnmute).
+function handleUnmute(res) {
+  pickDevice(2, (err, serial) => {
+    if (err) return jsonOut(res, 503, { ok: false, error: err.message });
+    runShellOrFallback(serial, UNMUTE_CMD);
     jsonOut(res, 200, { ok: true });
   });
 }
@@ -268,8 +319,11 @@ async function handle(req, res) {
     }
     // Silence the phone before the page lets the stream go (the page beacons
     // this on pagehide, and a closing toolbar button calls it first).
+    if (req.method === 'POST' && u.pathname === '/x/unmute') {
+      return handleUnmute(res);
+    }
     if (req.method === 'POST' && u.pathname === '/x/mute') {
-      return handleMute(res);
+      return handleMute(req, res);
     }
     // Screenshot goes to the phone's gallery, not to the page (the page has no
     // scrcpy control channel to trigger the device-side capture).
@@ -351,6 +405,7 @@ function injectProfile(url, req) {
   u.searchParams.set('maxSize', String(p.maxSize));
   u.searchParams.set('bitrate', String(p.bitrate));
   u.searchParams.set('maxFps', String(p.maxFps));
+  scheduleUnmute();
   /* Pin non-Apple browsers to H.264.
    * The front-end's automatic codec choice got stuck on a pre-release bundle
    * (bundle.js shipped without a cache-busting query), so it picked H.265 — and
